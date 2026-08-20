@@ -36,6 +36,7 @@ from msgbackup_extractor.models import (
     MediaItem,
     MediaSource,
     SourceKind,
+    TimestampSource,
 )
 
 logger = get_logger("threema")
@@ -660,6 +661,9 @@ class _ThreemaReader:
             chat=chat,
             original_filename=filename if isinstance(filename, str) else None,
             timestamp=timestamp if isinstance(timestamp, datetime) else None,
+            timestamp_source=(
+                TimestampSource.MESSAGE if isinstance(timestamp, datetime) else None
+            ),
             declared_mime=mime if isinstance(mime, str) else None,
             is_thumbnail=is_thumbnail,
             message_id=str(message_pk) if message_pk is not None else None,

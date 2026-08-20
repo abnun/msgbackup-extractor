@@ -234,6 +234,22 @@ class DetectionResult:
 # ---------------------------------------------------------------------------
 
 
+class TimestampSource(enum.StrEnum):
+    """Woher der Zeitstempel eines Mediums stammt.
+
+    Der Unterschied ist inhaltlich, nicht technisch: ein Zeitstempel aus der
+    App-Datenbank sagt, wann die Nachricht gesendet wurde. Der Zeitstempel einer
+    Backupdatei sagt nur, wann das Backup sie geschrieben hat - fuer eine
+    Zeitachse ist das wertlos und irrefuehrend, weil alle solchen Dateien am
+    Tag des Backups landen.
+    """
+
+    #: Aus der App-Datenbank, also das Datum der Nachricht.
+    MESSAGE = "message"
+    #: Aus den Dateimetadaten des Backups (MBFile).
+    FILE = "file"
+
+
 class SourceKind(enum.StrEnum):
     """Woher der Inhalt einer zu exportierenden Datei kommt.
 
@@ -312,8 +328,10 @@ class MediaItem:
     chat: ChatReference | None = None
     #: Originaldateiname aus der Datenbank, falls vorhanden.
     original_filename: str | None = None
-    #: Zeitstempel der zugehoerigen Nachricht.
+    #: Zeitstempel der zugehoerigen Nachricht oder der Backupdatei.
     timestamp: datetime | None = None
+    #: Woher der Zeitstempel stammt. None, wenn keiner vorliegt.
+    timestamp_source: TimestampSource | None = None
     #: Von der App angegebener MIME-Type. Die Signaturerkennung hat Vorrang.
     declared_mime: str | None = None
     #: True, wenn dies ein Vorschaubild und nicht das Original ist.
@@ -425,6 +443,7 @@ class ExtractedFile:
     chat_id: str | None = None
     original_filename: str | None = None
     timestamp: datetime | None = None
+    timestamp_source: TimestampSource | None = None
     is_thumbnail: bool = False
     thumbnail_of: str | None = None
     #: Kennung der behaltenen Datei, wenn dies ein Duplikat ist.

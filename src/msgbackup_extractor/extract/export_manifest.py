@@ -45,6 +45,9 @@ def _entry_to_dict(entry: ExtractedFile) -> dict[str, Any]:
         "chat_id": entry.chat_id,
         "original_filename": entry.original_filename,
         "timestamp": entry.timestamp.isoformat() if entry.timestamp else None,
+        "timestamp_source": (
+            entry.timestamp_source.value if entry.timestamp_source else None
+        ),
         "is_thumbnail": entry.is_thumbnail,
         "thumbnail_of": entry.thumbnail_of,
         "duplicate_of": entry.duplicate_of,

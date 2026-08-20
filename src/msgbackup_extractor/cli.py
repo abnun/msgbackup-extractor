@@ -47,6 +47,12 @@ from msgbackup_extractor.extract.planner import ExtractOptions
 from msgbackup_extractor.extract.verify import verify as verify_export
 from msgbackup_extractor.extraction import ExtractionBlocked, Extractor
 from msgbackup_extractor.models import MediaCategory
+from msgbackup_extractor.ui.builder import (
+    UiBuildError,
+    build_index,
+    load_raw_manifest,
+    write_page,
+)
 
 PROGRAM = "msgx"
 
@@ -295,6 +301,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Schreibt den Pruefbericht zusaetzlich als JSON.",
     )
     verify.set_defaults(handler=_command_verify)
+
+    ui = subparsers.add_parser(
+        "ui",
+        help="Eine lokale HTML-Ansicht des Exports erzeugen",
+        description=(
+            "Erzeugt index.html im Ausgabeverzeichnis. Die Seite ist in sich "
+            "geschlossen und laedt nichts nach - kein CDN, keine externen "
+            "Fonts, keine Netzverbindung."
+        ),
+    )
+    ui.add_argument(
+        "--output",
+        type=Path,
+        metavar="PFAD",
+        required=True,
+        help="Das Ausgabeverzeichnis eines Exports oder dessen export-manifest.json.",
+    )
+    ui.add_argument("--verbose", action="store_true", help="Technische Details.")
+    ui.set_defaults(handler=_command_ui)
 
     return parser
 
@@ -627,6 +652,46 @@ def _command_extract(arguments: argparse.Namespace) -> int:
 
     if outcome.result.integrity_errors:
         return EXIT_ERROR
+    return EXIT_OK
+
+
+def _command_ui(arguments: argparse.Namespace) -> int:
+    path = arguments.output.expanduser()
+    manifest_path = path / export_manifest.MANIFEST_NAME if path.is_dir() else path
+
+    try:
+        raw = load_raw_manifest(manifest_path)
+        manifest = export_manifest.load(manifest_path)
+        index = build_index(manifest, raw=raw)
+    except (UiBuildError, InvalidManifest) as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    target = write_page(index, manifest.output_dir)
+    counts = index["counts"]
+
+    lines = [
+        "Lokale Ansicht erzeugt",
+        "=" * len("Lokale Ansicht erzeugt"),
+        "",
+        f"Datei:              {target}",
+        f"Medien:             {reports.format_count(counts['entries'])}",
+        f"mit Vorschaubild:   {reports.format_count(counts['paired'])}",
+    ]
+    if counts["preview_only"]:
+        lines.append(
+            f"nur Vorschaubild:   {reports.format_count(counts['preview_only'])}"
+        )
+    if counts["without_chat"]:
+        lines.append(f"ohne Chat:          {reports.format_count(counts['without_chat'])}")
+    if counts["without_date"]:
+        lines.append(f"ohne Datum:         {reports.format_count(counts['without_date'])}")
+    lines += [
+        f"Chats:              {reports.format_count(len(index['chats']))}",
+        f"Groesse der Seite:  {reports.format_size(target.stat().st_size)}",
+    ]
+    print("\n".join(lines))
+    print(f"\nZum Oeffnen:\n    open {target}", file=sys.stderr)
     return EXIT_OK
 
 

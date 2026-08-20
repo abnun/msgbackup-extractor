@@ -55,6 +55,7 @@ from msgbackup_extractor.models import (
     MediaItem,
     MediaSource,
     SourceKind,
+    TimestampSource,
 )
 
 logger = get_logger("extraction")
@@ -344,6 +345,9 @@ class Extractor:
                 size=entry.size,
                 original_filename=entry.basename,
                 timestamp=entry.last_modified,
+                timestamp_source=(
+                    TimestampSource.FILE if entry.last_modified else None
+                ),
             )
             for entry in entries
             if entry.file_id not in referenced

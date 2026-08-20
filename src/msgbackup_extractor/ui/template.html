@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Messenger-Export</title>
+<style>
+/* ---------------------------------------------------------------------------
+   Alles inline. Keine externen Fonts, keine CDN-Verweise, keine Netzzugriffe.
+   --------------------------------------------------------------------------- */
+:root {
+  color-scheme: light dark;
+  --bg: #f6f6f7;
+  --panel: #ffffff;
+  --panel-2: #f0f0f2;
+  --line: #d9d9de;
+  --text: #17171a;
+  --muted: #6b6b74;
+  --accent: #2f6fdb;
+  --accent-soft: #e5eefc;
+  --warn: #9a5b00;
+  --warn-soft: #fdf1dd;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.06);
+  --radius: 10px;
+  --sidebar: 264px;
+  --header: 56px;
+  font-synthesis-weight: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16171a;
+    --panel: #1e1f23;
+    --panel-2: #26272c;
+    --line: #33343a;
+    --text: #ececed;
+    --muted: #9a9aa4;
+    --accent: #6ea2ff;
+    --accent-soft: #1f2c45;
+    --warn: #e0a854;
+    --warn-soft: #33280f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; }
+
+/* -- Kopfzeile ------------------------------------------------------------ */
+header {
+  position: sticky; top: 0; z-index: 30;
+  height: var(--header);
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 16px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+header h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+header .meta { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+header .spacer { flex: 1; }
+#search {
+  width: 260px; padding: 7px 11px;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px;
+}
+#search:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+
+/* -- Grundraster --------------------------------------------------------- */
+.layout { display: grid; grid-template-columns: var(--sidebar) 1fr; align-items: start; }
+@media (max-width: 820px) {
+  .layout { grid-template-columns: 1fr; }
+  aside { position: static !important; height: auto !important; border-right: 0 !important;
+          border-bottom: 1px solid var(--line); }
+}
+
+/* -- Filterleiste -------------------------------------------------------- */
+aside {
+  position: sticky; top: var(--header);
+  height: calc(100vh - var(--header));
+  overflow-y: auto;
+  padding: 16px 14px 40px;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+}
+aside section { margin-bottom: 22px; }
+aside h2 {
+  margin: 0 0 8px; font-size: 11px; font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+}
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  padding: 5px 10px; border-radius: 999px; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--line);
+  font-size: 12.5px; white-space: nowrap;
+}
+.chip[aria-pressed="true"] {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
+  font-weight: 600;
+}
+.chip .n { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: 5px; }
+.chip[aria-pressed="true"] .n { color: inherit; opacity: .75; }
+.rows { display: flex; flex-direction: column; gap: 2px; }
+.row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border: 0; border-radius: 7px; cursor: pointer;
+  background: transparent; text-align: left; font-size: 13px;
+}
+.row:hover { background: var(--panel-2); }
+.row[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.row .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .n { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.row[aria-pressed="true"] .n { color: inherit; opacity: .75; }
+#reset {
+  width: 100%; padding: 7px; border-radius: 8px; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--line);
+}
+#reset:hover { border-color: var(--accent); color: var(--accent); }
+
+/* -- Inhaltsbereich ------------------------------------------------------ */
+main { padding: 18px 18px 80px; min-width: 0; }
+.status {
+  position: sticky; top: var(--header); z-index: 20;
+  margin: -18px -18px 14px; padding: 10px 18px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums;
+}
+.status b { color: var(--text); font-weight: 650; }
+.month {
+  margin: 26px 0 10px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px; font-weight: 650; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.month:first-child { margin-top: 4px; }
+.grid {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+.cell {
+  position: relative; aspect-ratio: 1; padding: 0; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+}
+.cell:hover { border-color: var(--accent); }
+.cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cell .ph {
+  width: 100%; height: 100%; display: grid; place-items: center;
+  color: var(--muted); text-align: center;
+}
+.cell .ph svg { display: block; margin: 0 auto; opacity: .75; }
+.cell .ph small { display: block; font-size: 10.5px; margin-top: 6px; }
+.badge { display: inline-flex; align-items: center; gap: 4px; }
+.badge svg { flex: none; }
+.badges {
+  position: absolute; top: 6px; left: 6px; right: 6px;
+  display: flex; flex-wrap: wrap; gap: 4px; pointer-events: none;
+}
+.badge {
+  padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 650;
+  background: rgba(0,0,0,.62); color: #fff; backdrop-filter: blur(3px);
+}
+.badge.warn { background: var(--warn); }
+.cell .name {
+  position: absolute; inset: auto 0 0 0; padding: 14px 7px 5px;
+  background: linear-gradient(transparent, rgba(0,0,0,.72));
+  color: #fff; font-size: 10.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.empty { padding: 60px 20px; text-align: center; color: var(--muted); }
+
+/* -- Einzelansicht ------------------------------------------------------- */
+dialog#viewer {
+  width: min(96vw, 1400px); max-width: none;
+  height: min(94vh, 1000px); max-height: none;
+  padding: 0; border: 0; border-radius: 14px;
+  background: var(--panel); color: var(--text); box-shadow: var(--shadow);
+}
+dialog#viewer::backdrop { background: rgba(0,0,0,.72); backdrop-filter: blur(3px); }
+.viewer { display: grid; grid-template-columns: 1fr 300px; height: 100%; }
+@media (max-width: 760px) { .viewer { grid-template-columns: 1fr; } }
+.stage {
+  display: grid; place-items: center; min-width: 0; min-height: 0;
+  background: #0b0b0d; padding: 12px;
+}
+.stage img, .stage video { max-width: 100%; max-height: 100%; object-fit: contain; }
+.stage audio { width: min(92%, 460px); }
+.stage .fallback { color: #cfcfd6; text-align: center; padding: 24px; }
+.stage .fallback a { color: #9dc0ff; }
+.info { padding: 16px; overflow-y: auto; border-left: 1px solid var(--line); }
+.info h3 {
+  margin: 0 0 12px; font-size: 14px; font-weight: 650; word-break: break-word;
+}
+.info dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; }
+.info dt { color: var(--muted); font-size: 12px; }
+.info dd {
+  margin: 0; font-size: 12.5px; word-break: break-all;
+  font-variant-numeric: tabular-nums;
+}
+.info .note {
+  margin-top: 14px; padding: 9px 11px; border-radius: 8px;
+  background: var(--warn-soft); color: var(--warn); font-size: 12px;
+}
+.nav {
+  display: flex; gap: 8px; margin-top: 16px; padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.nav button {
+  flex: 1; padding: 8px; border-radius: 8px; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--line);
+}
+.nav button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.nav button:disabled { opacity: .4; cursor: default; }
+.hint { margin-top: 10px; color: var(--muted); font-size: 11.5px; }
+kbd {
+  padding: 1px 5px; border-radius: 4px; font-size: 11px;
+  background: var(--panel-2); border: 1px solid var(--line);
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Messenger-Export</h1>
+  <span class="meta" id="head-meta"></span>
+  <span class="spacer"></span>
+  <input id="search" type="search" placeholder="Dateiname suchen…" autocomplete="off"
+         spellcheck="false" aria-label="Dateiname suchen">
+</header>
+
+<div class="layout">
+  <aside>
+    <section>
+      <h2>Medientyp</h2>
+      <div class="chips" id="kinds"></div>
+    </section>
+    <section>
+      <h2>Jahr</h2>
+      <div class="chips" id="years"></div>
+    </section>
+    <section>
+      <h2>Besonderheiten</h2>
+      <div class="chips" id="flags"></div>
+    </section>
+    <section>
+      <h2>Chat</h2>
+      <div class="rows" id="chats"></div>
+    </section>
+    <button id="reset" type="button">Filter zurücksetzen</button>
+  </aside>
+
+  <main>
+    <div class="status" id="status"></div>
+    <div id="results"></div>
+  </main>
+</div>
+
+<dialog id="viewer">
+  <div class="viewer">
+    <div class="stage" id="stage"></div>
+    <div class="info">
+      <h3 id="v-title"></h3>
+      <dl id="v-meta"></dl>
+      <div id="v-note"></div>
+      <div class="nav">
+        <button type="button" id="v-prev">← Zurück</button>
+        <button type="button" id="v-next">Weiter →</button>
+      </div>
+      <p class="hint"><kbd>←</kbd> <kbd>→</kbd> blättern, <kbd>Esc</kbd> schließen</p>
+    </div>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+const DATA = /*__INDEX__*/;
+</script>
+<script>
+"use strict";
+(function () {
+  const items = DATA.items || [];
+  const chats = DATA.chats || [];
+  const counts = DATA.counts || {};
+
+  /* --- Hilfen ----------------------------------------------------------- */
+
+  // Pfade koennen Leerzeichen, Umlaute und Emoji enthalten. Jedes Segment
+  // einzeln kodieren, damit die Schraegstriche erhalten bleiben.
+  const href = (p) => p.split("/").map(encodeURIComponent).join("/");
+
+  // Plural fuer die Filterleiste, Singular fuer die Kennzeichnung an der Kachel.
+  const KIND_LABEL = {
+    image: "Bilder", video: "Videos", audio: "Audio",
+    document: "Dokumente", internal: "App-Interna", other: "Sonstige",
+  };
+  const KIND_ONE = {
+    image: "Bild", video: "Video", audio: "Audio",
+    document: "Dokument", internal: "App-intern", other: "Sonstiges",
+  };
+
+  // Inline-SVG statt Emoji: Emoji fallen ohne passenden Font auf
+  // Ersatzglyphen zurueck, und ein Symbol soll ueberall gleich aussehen.
+  const ICON = {
+    image: '<path d="M3 5h18v14H3z" fill="none" stroke="currentColor" stroke-width="1.6"/>' +
+           '<circle cx="8.5" cy="10" r="1.8" fill="currentColor"/>' +
+           '<path d="M4 18l5-5 3.5 3.5L16 13l4 5z" fill="currentColor"/>',
+    video: '<path d="M9 7.5v9l7.5-4.5z" fill="currentColor"/>' +
+           '<rect x="3" y="4" width="18" height="16" rx="2" fill="none" ' +
+           'stroke="currentColor" stroke-width="1.6"/>',
+    audio: '<path d="M14 4v12.2a3 3 0 1 1-2-2.83V6.6l-5 1.2v9.4a3 3 0 1 1-2-2.83V6L14 4z" ' +
+           'fill="currentColor"/>',
+    document: '<path d="M6 3h8l4 4v14H6z" fill="none" stroke="currentColor" ' +
+              'stroke-width="1.6"/><path d="M14 3v4h4" fill="none" stroke="currentColor" ' +
+              'stroke-width="1.6"/><path d="M9 12h6M9 15h6M9 18h4" stroke="currentColor" ' +
+              'stroke-width="1.4" fill="none"/>',
+    internal: '<path d="M4 6h16v12H4z" fill="none" stroke="currentColor" stroke-width="1.6"/>' +
+              '<path d="M4 10h16M8 6v12" stroke="currentColor" stroke-width="1.4"/>',
+    other: '<circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" ' +
+           'stroke-width="1.6"/><path d="M12 16.5v.01M9.6 9.2a2.5 2.5 0 1 1 2.9 3.1v1" ' +
+           'stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
+  };
+  function svg(kind, size) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" ` +
+           `aria-hidden="true">${ICON[kind] || ICON.other}</svg>`;
+  }
+  const MONTHS = ["Januar","Februar","März","April","Mai","Juni",
+                  "Juli","August","September","Oktober","November","Dezember"];
+
+  const nf = new Intl.NumberFormat("de-DE");
+  const num = (n) => nf.format(n);
+
+  function size(bytes) {
+    if (bytes === undefined || bytes === null) return "unbekannt";
+    if (bytes < 1000) return bytes + " B";
+    let v = bytes;
+    for (const unit of ["KB", "MB", "GB", "TB"]) {
+      v /= 1000;
+      if (v < 1000) return v.toFixed(2) + " " + unit;
+    }
+    return v.toFixed(2) + " PB";
+  }
+
+  const dt = (t) => new Date(t * 1000);
+  function fullDate(t) {
+    if (!t) return "kein Datum";
+    const d = dt(t);
+    const two = (n) => String(n).padStart(2, "0");
+    return `${two(d.getDate())}.${two(d.getMonth() + 1)}.${d.getFullYear()} ` +
+           `${two(d.getHours())}:${two(d.getMinutes())}`;
+  }
+  const monthKey = (t) => (t ? dt(t).getFullYear() * 100 + dt(t).getMonth() : -1);
+  function monthLabel(key) {
+    if (key === -1) return "Ohne Datum";
+    return `${MONTHS[key % 100]} ${Math.floor(key / 100)}`;
+  }
+
+  /* --- Ableitungen einmalig vorberechnen -------------------------------- */
+
+  items.forEach((it, i) => {
+    it._i = i;
+    it._y = it.t ? dt(it.t).getFullYear() : null;
+    it._mk = monthKey(it.t);
+    it._s = ((it.n || "") + " " + it.p).toLowerCase();
+  });
+
+  const kindCounts = {}, yearCounts = {}, chatCounts = {};
+  for (const it of items) {
+    kindCounts[it.k] = (kindCounts[it.k] || 0) + 1;
+    if (it._y) yearCounts[it._y] = (yearCounts[it._y] || 0) + 1;
+    if (it.c !== undefined) chatCounts[it.c] = (chatCounts[it.c] || 0) + 1;
+  }
+
+  const FLAGS = {
+    nochat: { label: "Ohne Chat", n: counts.without_chat || 0, test: (it) => it.c === undefined },
+    nodate: { label: "Ohne Datum", n: counts.without_date || 0, test: (it) => !it.t },
+    preview: { label: "Nur Vorschau", n: counts.preview_only || 0, test: (it) => it.o === 1 },
+    mismatch: { label: "Endung ≠ Inhalt", n: counts.mismatch || 0, test: (it) => it.x === 1 },
+  };
+
+  /* --- Zustand ---------------------------------------------------------- */
+
+  const state = {
+    kinds: new Set(), years: new Set(), chats: new Set(), flags: new Set(), q: "",
+  };
+  let filtered = items;
+
+  function apply() {
+    const q = state.q.trim().toLowerCase();
+    filtered = items.filter((it) => {
+      if (state.kinds.size && !state.kinds.has(it.k)) return false;
+      if (state.years.size && !(it._y && state.years.has(it._y))) return false;
+      if (state.chats.size && !(it.c !== undefined && state.chats.has(it.c))) return false;
+      for (const key of state.flags) if (!FLAGS[key].test(it)) return false;
+      if (q && !it._s.includes(q)) return false;
+      return true;
+    });
+    renderStatus();
+    renderResults();
+  }
+
+  /* --- Filterleiste ----------------------------------------------------- */
+
+  function chip(label, n, pressed, onClick) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip";
+    b.setAttribute("aria-pressed", pressed ? "true" : "false");
+    b.innerHTML = `${label}<span class="n">${num(n)}</span>`;
+    b.addEventListener("click", () => onClick(b));
+    return b;
+  }
+  function toggle(set, value, button) {
+    if (set.has(value)) { set.delete(value); button.setAttribute("aria-pressed", "false"); }
+    else { set.add(value); button.setAttribute("aria-pressed", "true"); }
+    apply();
+  }
+
+  function buildFilters() {
+    const kinds = document.getElementById("kinds");
+    for (const k of ["image", "video", "audio", "document", "internal", "other"]) {
+      if (!kindCounts[k]) continue;
+      kinds.append(chip(KIND_LABEL[k], kindCounts[k], false,
+        (b) => toggle(state.kinds, k, b)));
+    }
+
+    const years = document.getElementById("years");
+    for (const y of Object.keys(yearCounts).sort((a, b) => b - a)) {
+      years.append(chip(y, yearCounts[y], false,
+        (b) => toggle(state.years, Number(y), b)));
+    }
+
+    const flags = document.getElementById("flags");
+    for (const [key, f] of Object.entries(FLAGS)) {
+      if (!f.n) continue;
+      flags.append(chip(f.label, f.n, false, (b) => toggle(state.flags, key, b)));
+    }
+
+    const list = document.getElementById("chats");
+    chats.forEach((name, index) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "row";
+      b.setAttribute("aria-pressed", "false");
+      b.innerHTML = `<span class="label"></span><span class="n">${num(chatCounts[index] || 0)}</span>`;
+      b.querySelector(".label").textContent = name;
+      b.title = name;
+      b.addEventListener("click", () => toggle(state.chats, index, b));
+      list.append(b);
+    });
+    if (!chats.length) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = "Keine Chat-Zuordnung vorhanden.";
+      list.append(p);
+    }
+  }
+
+  document.getElementById("reset").addEventListener("click", () => {
+    state.kinds.clear(); state.years.clear(); state.chats.clear(); state.flags.clear();
+    state.q = "";
+    document.getElementById("search").value = "";
+    document.querySelectorAll('[aria-pressed="true"]')
+      .forEach((b) => b.setAttribute("aria-pressed", "false"));
+    apply();
+  });
+
+  let searchTimer = 0;
+  document.getElementById("search").addEventListener("input", (e) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { state.q = e.target.value; apply(); }, 140);
+  });
+
+  /* --- Kopf- und Statuszeile -------------------------------------------- */
+
+  document.getElementById("head-meta").textContent = [
+    DATA.app ? DATA.app.charAt(0).toUpperCase() + DATA.app.slice(1) : "unbekannt",
+    `${num(counts.entries || 0)} Medien`,
+    `${size(counts.item_bytes)} Originale`,
+    `Export ${size(counts.total_bytes)}`,
+  ].join(" · ");
+
+  function renderStatus() {
+    const total = items.length;
+    const shown = filtered.length;
+    const bytes = filtered.reduce((a, it) => a + (it.s || 0), 0);
+    const parts = [
+      shown === total
+        ? `<b>${num(total)}</b> Medien`
+        : `<b>${num(shown)}</b> von ${num(total)} Medien`,
+      size(bytes),
+    ];
+    if (counts.thumbnails) {
+      parts.push(`${num(counts.paired || 0)} mit Vorschaubild`);
+    }
+    const dated = filtered.filter((it) => it.t).length;
+    if (dated !== shown) {
+      parts.push(`${num(shown - dated)} ohne Nachrichtendatum`);
+    }
+    document.getElementById("status").innerHTML = parts.join(" · ");
+  }
+
+  /* --- Raster ----------------------------------------------------------- */
+
+  const CHUNK = 240;
+  let cursor = 0;
+  let sentinel = null;
+  let observer = null;
+  let currentMonth = null;
+  let grid = null;
+
+  function cell(it, position) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "cell";
+    b.dataset.pos = position;
+
+    if (it.v) {
+      const img = document.createElement("img");
+      img.loading = "lazy";
+      img.decoding = "async";
+      img.src = href(it.v);
+      img.alt = it.n || "";
+      // Ein kaputtes Vorschaubild soll als solches erkennbar sein.
+      img.addEventListener("error", () => {
+        img.replaceWith(placeholder(it, "nicht lesbar"));
+      }, { once: true });
+      b.append(img);
+    } else {
+      b.append(placeholder(it));
+    }
+
+    const badges = document.createElement("div");
+    badges.className = "badges";
+    if (it.k !== "image") badges.append(badge(KIND_ONE[it.k], false, it.k));
+    if (it.o === 1) badges.append(badge("nur Vorschau", true));
+    if (it.x === 1) badges.append(badge("Endung ≠ Inhalt", true));
+    if (badges.childElementCount) b.append(badges);
+
+    if (it.n) {
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = it.n;
+      b.append(name);
+    }
+    b.title = `${it.n || it.p}\n${fullDate(it.t)}`;
+    b.addEventListener("click", () => open(position));
+    return b;
+  }
+
+  function badge(text, warn, kind) {
+    const s = document.createElement("span");
+    s.className = warn ? "badge warn" : "badge";
+    if (kind) s.innerHTML = svg(kind, 11);
+    s.append(document.createTextNode(text));
+    return s;
+  }
+
+  function placeholder(it, note) {
+    const d = document.createElement("div");
+    d.className = "ph";
+    const label = document.createElement("small");
+    label.textContent = note || KIND_ONE[it.k] || "unbekannt";
+    const box = document.createElement("div");
+    box.innerHTML = svg(it.k, 30);
+    box.append(label);
+    d.append(box);
+    return d;
+  }
+
+  function renderResults() {
+    const host = document.getElementById("results");
+    host.textContent = "";
+    cursor = 0;
+    currentMonth = null;
+    grid = null;
+    if (observer) { observer.disconnect(); observer = null; }
+
+    if (!filtered.length) {
+      const p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = "Keine Medien passen zu diesen Filtern.";
+      host.append(p);
+      return;
+    }
+
+    sentinel = document.createElement("div");
+    sentinel.style.height = "1px";
+    host.append(sentinel);
+
+    // Nachladen beim Scrollen: 5.800 Kacheln auf einmal in den DOM zu haengen
+    // laesst den Browser haengen, deshalb in Bloecken.
+    observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) more();
+    }, { rootMargin: "1200px" });
+    observer.observe(sentinel);
+    more();
+  }
+
+  function more() {
+    if (cursor >= filtered.length) {
+      if (observer) { observer.disconnect(); observer = null; }
+      return;
+    }
+    const host = document.getElementById("results");
+    const end = Math.min(cursor + CHUNK, filtered.length);
+    const frag = document.createDocumentFragment();
+
+    for (let position = cursor; position < end; position++) {
+      const it = filtered[position];
+      if (it._mk !== currentMonth) {
+        currentMonth = it._mk;
+        const h = document.createElement("div");
+        h.className = "month";
+        h.textContent = monthLabel(currentMonth);
+        frag.append(h);
+        grid = document.createElement("div");
+        grid.className = "grid";
+        frag.append(grid);
+      }
+      grid.append(cell(it, position));
+    }
+    host.insertBefore(frag, sentinel);
+    cursor = end;
+  }
+
+  /* --- Einzelansicht ---------------------------------------------------- */
+
+  const viewer = document.getElementById("viewer");
+  const stage = document.getElementById("stage");
+  let position = -1;
+
+  function open(next) {
+    position = next;
+    show();
+    if (!viewer.open) viewer.showModal();
+  }
+
+  function show() {
+    const it = filtered[position];
+    if (!it) return;
+    const url = href(it.p);
+
+    stage.textContent = "";
+    if (it.k === "image") {
+      const img = document.createElement("img");
+      img.src = url;
+      img.alt = it.n || "";
+      img.addEventListener("error", () => { stage.textContent = ""; stage.append(fallback(it)); },
+        { once: true });
+      stage.append(img);
+    } else if (it.k === "video") {
+      const v = document.createElement("video");
+      v.src = url; v.controls = true; v.preload = "metadata";
+      stage.append(v);
+    } else if (it.k === "audio") {
+      const a = document.createElement("audio");
+      a.src = url; a.controls = true; a.preload = "metadata";
+      stage.append(a);
+    } else {
+      stage.append(fallback(it));
+    }
+
+    document.getElementById("v-title").textContent = it.n || it.p.split("/").pop();
+
+    const rows = [
+      ["Chat", it.c !== undefined ? chats[it.c] : "keine Zuordnung"],
+      ["Nachricht vom", it.t ? fullDate(it.t) : "nicht bekannt"],
+    ];
+    if (it.f) rows.push(["Datei geändert", fullDate(it.f)]);
+    rows.push(
+      ["Typ", it.m || "unbekannt"],
+      ["Größe", size(it.s)],
+      ["Pfad", it.p],
+    );
+    const dl = document.getElementById("v-meta");
+    dl.textContent = "";
+    for (const [key, value] of rows) {
+      const dtEl = document.createElement("dt");
+      dtEl.textContent = key;
+      const ddEl = document.createElement("dd");
+      ddEl.textContent = value;
+      dl.append(dtEl, ddEl);
+    }
+
+    const notes = [];
+    if (it.o === 1) {
+      notes.push("Von dieser Datei liegt nur das Vorschaubild der App vor; " +
+                 "das Original ist im Backup nicht enthalten.");
+    }
+    if (it.x === 1) {
+      notes.push("Die Dateiendung widerspricht dem erkannten Inhalt. Der Inhalt " +
+                 "entscheidet; der Originalname bleibt unverändert.");
+    }
+    if (it.c === undefined) {
+      notes.push("Für diese Datei war keine Zuordnung zu einem Chat belegbar.");
+    }
+    if (!it.t && it.f) {
+      notes.push("Es liegt kein Nachrichtendatum vor. Angegeben ist der " +
+                 "Änderungszeitpunkt der Datei im Backup — er sagt, wann das " +
+                 "Backup sie schrieb, nicht wann der Inhalt entstand.");
+    }
+    const note = document.getElementById("v-note");
+    note.textContent = "";
+    for (const text of notes) {
+      const d = document.createElement("div");
+      d.className = "note";
+      d.textContent = text;
+      note.append(d);
+    }
+
+    document.getElementById("v-prev").disabled = position <= 0;
+    document.getElementById("v-next").disabled = position >= filtered.length - 1;
+  }
+
+  function fallback(it) {
+    const d = document.createElement("div");
+    d.className = "fallback";
+    const a = document.createElement("a");
+    a.href = href(it.p);
+    a.textContent = it.n || it.p.split("/").pop();
+    d.append(document.createTextNode("Keine Vorschau möglich. "), a);
+    return d;
+  }
+
+  function step(delta) {
+    const next = position + delta;
+    if (next < 0 || next >= filtered.length) return;
+    position = next;
+    show();
+  }
+
+  document.getElementById("v-prev").addEventListener("click", () => step(-1));
+  document.getElementById("v-next").addEventListener("click", () => step(1));
+  viewer.addEventListener("close", () => { stage.textContent = ""; });
+  viewer.addEventListener("click", (e) => { if (e.target === viewer) viewer.close(); });
+  document.addEventListener("keydown", (e) => {
+    if (!viewer.open) return;
+    if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
+    if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+  });
+
+  /* --- Start ------------------------------------------------------------ */
+
+  buildFilters();
+  apply();
+})();
+</script>
+</body>
+</html>

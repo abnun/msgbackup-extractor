@@ -41,6 +41,11 @@ msgx = "msgbackup_extractor.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Die UI-Vorlage ist eine Paketdatei, damit `msgx ui` sie auch aus einer
+# installierten Distribution lesen kann.
+[tool.setuptools.package-data]
+"msgbackup_extractor.ui" = ["*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"

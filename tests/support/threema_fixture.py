@@ -137,14 +137,19 @@ class ThreemaFixture:
             BackupFile(GROUP_DOMAIN, f"{EXTERNAL_DIR}/{uuid}", content)
             for uuid, content in sorted(self.external_blobs.items())
         ]
-        # App-Interna, die nicht in die Medienverzeichnisse gehoeren.
+        # App-Interna, die nicht in die Medienverzeichnisse gehoeren. Sie tragen
+        # ein Dateidatum aus dem Backup - bewusst spaeter als jede Nachricht,
+        # damit auffaellt, wenn dieses Datum auf der Zeitachse landet.
+        written = datetime(2026, 8, 20, 5, 14, 0, tzinfo=UTC)
         files += [
             BackupFile(APP_DOMAIN, "Library/Preferences/ch.threema.iapp.plist",
-                       b"bplist00" + b"\x00" * 40),
+                       b"bplist00" + b"\x00" * 40, last_modified=written),
             BackupFile(GROUP_DOMAIN, "Library/Application Support/.tipkit/tips-store.db",
-                       b"SQLite format 3\x00" + b"\x00" * 60),
-            BackupFile(GROUP_DOMAIN, "Documents/threema.log", b"2026-01-01 gestartet\n"),
-            BackupFile(PLUGIN_DOMAIN, "Library/Preferences/share.plist", b"bplist00" + b"\x00" * 8),
+                       b"SQLite format 3\x00" + b"\x00" * 60, last_modified=written),
+            BackupFile(GROUP_DOMAIN, "Documents/threema.log",
+                       b"2026-01-01 gestartet\n", last_modified=written),
+            BackupFile(PLUGIN_DOMAIN, "Library/Preferences/share.plist",
+                       b"bplist00" + b"\x00" * 8, last_modified=written),
         ]
         return files
 

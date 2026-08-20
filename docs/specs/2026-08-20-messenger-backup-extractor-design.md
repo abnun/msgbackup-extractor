@@ -565,7 +565,7 @@ gebaute Artefakt, weil alles Weitere darauf aufbaut.
 | 4 | `extract` + `verify`: `planner`, `runner`, `--dry-run`, `--deduplicate`, Export-Manifest, Integrität, Tests | **erledigt** |
 | 5 | `database`-Subcommand + `--organize-by-chat` auf Basis des real vorgefundenen Schemas | **erledigt** |
 | 6 | README vollständig + zweites App-Profil (WhatsApp oder Signal) zur Validierung des Interfaces | — |
-| 7 | Lokales UI zum Durchsehen des Exports (siehe §18) | — |
+| 7 | Lokales UI zum Durchsehen des Exports (siehe §18) | **erledigt** |
 
 ---
 
@@ -610,10 +610,36 @@ einzelne, in sich geschlossene HTML-Datei im Export oder über einen lokalen
 Server, der ausschließlich an `127.0.0.1` bindet und nur aus dem
 Ausgabeverzeichnis liest. Beides ist offline vollständig funktionsfähig.
 
-**Offene Entscheidungen.** Einzeldatei-HTML gegen lokalen Server; ob
-Nachrichtentexte überhaupt angezeigt werden (bisher werden sie nicht
-exportiert); Umfang der Suche und Filter. Wird entschieden, wenn Phase 4 und 5
-stehen und der Export in seiner endgültigen Form vorliegt.
+**Entschieden und umgesetzt.**
+
+* **Einzeldatei-HTML**, kein Server. `msgx ui` erzeugt `index.html` im
+  Exportverzeichnis. Der Index ([Menge entfernt] für [Anzahl entfernt] Einträge) wird eingebettet,
+  weil `fetch()` von `file://` an der Same-Origin-Regel scheitert.
+* **Navigation: Zeitachse zuerst**, neueste zuerst, Monatstrenner, Filter für
+  Typ, Jahr, Chat und Besonderheiten. Grund: ein einzelner Chat hält [Anteil entfernt] der
+  Dateien, eine chatzentrierte Startseite wäre ein Riesenordner und 23
+  Fußnoten.
+* **Randfälle sichtbar, aber gekennzeichnet.** Ohne Chat, ohne Datum, nur
+  Vorschaubild, Endung ≠ Inhalt sind eigene Filter und an der Kachel markiert.
+  Was fehlt, ist bei einer Datenrettung die wichtigste Information.
+* **Nachrichtentexte werden nicht angezeigt**, weil sie nicht exportiert
+  werden. Das bleibt so, solange es keinen ausdrücklichen Anlass gibt.
+* **Symbole als eingebettetes SVG**, nicht als Emoji: Emoji fallen ohne
+  passenden Font auf Ersatzglyphen zurück.
+
+**Vorschaubilder.** Ein Vorschaubild ist die Kachel seines Originals, kein
+eigener Eintrag — sonst stünde jedes Bild doppelt. Ein Vorschaubild ohne
+Original bleibt ein eigener Eintrag mit Kennzeichnung; es ist oft alles, was
+von einem gelöschten Medium übrig ist. Von [Anzahl entfernt] exportierten Dateien bleiben
+so [Anzahl entfernt] Einträge: [Anzahl entfernt] Originale und 948 verwaiste Vorschaubilder.
+
+**Zeitachse und Dateidatum.** Auf der Zeitachse steht ausschließlich das
+Nachrichtendatum aus der App-Datenbank. Ein Datei-Änderungsdatum aus dem
+Backup wäre irreführend, weil es für alle betroffenen Dateien am Tag des
+Backups liegt — im ersten Entwurf standen deshalb fünf Plists und
+`ThreemaData.sqlite` an der Spitze der Galerie. Dafür trägt das Export-Manifest
+jetzt `timestamp_source` (`message` oder `file`); die Einzelansicht weist ein
+Dateidatum getrennt aus.
 
 ---
 

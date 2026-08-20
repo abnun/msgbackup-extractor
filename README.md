@@ -15,9 +15,9 @@ gebaut, WhatsApp und Signal sind vorgesehen.
 > | `backups` | fertig |
 > | `extract` | fertig, inkl. Chat-Zuordnung |
 > | `verify` | fertig |
+> | `ui` | fertig |
 >
-> Danach vorgesehen: ein zweites App-Profil (WhatsApp/Signal) und ein lokales
-> UI zum Durchsehen des Exports.
+> Danach vorgesehen: ein zweites App-Profil (WhatsApp/Signal).
 >
 > An einem echten Backup erprobt: iPhone, iOS, [Menge entfernt], Threema
 > [Version entfernt] — [Anzahl entfernt] Dateien / [Menge entfernt] extrahiert, 0 Fehler, 0
@@ -129,6 +129,51 @@ Optionen:
 | `--deduplicate` | inhaltsgleiche Dateien nur einmal schreiben |
 | `--types image,video` | nur diese Kategorien |
 | `--allow-cloud-output` | Ausgabe in einem Sync-Ordner erzwingen |
+
+Nach dem Export lohnt `msgx ui` (siehe unten) — damit siehst du das
+Ergebnis, ohne [Anzahl entfernt] Bilder im Finder zu scrollen.
+
+### Ansehen
+
+```bash
+msgx ui --output "~/messenger-extract/export/threema"
+```
+
+Erzeugt `index.html` im Exportverzeichnis. Doppelklick genügt — es braucht
+keinen Server.
+
+Die Seite ist **in sich geschlossen**: kein CDN, keine externen Fonts, keine
+Netzverbindung, keine Telemetrie. Symbole sind eingebettetes SVG statt Emoji,
+damit sie überall gleich aussehen. Der Index wird in die Seite eingebettet und
+nicht zur Laufzeit geladen, weil `fetch()` von `file://` an der
+Same-Origin-Regel der Browser scheitert. Bilder und Videos kommen über relative
+Pfade aus dem Export selbst. Ein Test prüft die Seite auf Netzverweise.
+
+Aufbau:
+
+- **Zeitachse**, neueste zuerst, mit Monatstrennern
+- **Filter** für Medientyp, Jahr, Chat und Besonderheiten (ohne Chat, ohne
+  Datum, nur Vorschaubild, Endung ≠ Inhalt) sowie Suche im Dateinamen
+- **Einzelansicht** mit Original, Videoplayer, Metadaten und Tastaturnavigation
+  (`←` `→` `Esc`)
+
+Zwei Entscheidungen, die dort bewusst so sind:
+
+**Vorschaubilder sind keine eigenen Einträge.** Sie sind die Kachel ihres
+Originals — sonst stünde jedes Bild doppelt in der Galerie. Ein Vorschaubild
+*ohne* Original bleibt ein eigener Eintrag und ist als „nur Vorschau"
+gekennzeichnet: es ist häufig alles, was von einem gelöschten Medium übrig ist.
+
+**Auf der Zeitachse steht nur das Nachrichtendatum.** Für Dateien, die nur ein
+Datei-Änderungsdatum aus dem Backup haben — Einstellungen, Logs, die
+App-Datenbanken —, wäre dieses Datum irreführend: es liegt für alle am Tag des
+Backups und hätte die neuesten echten Medien von der Spitze verdrängt. Sie
+erscheinen deshalb unter „Ohne Datum", und die Einzelansicht weist ihr
+Dateidatum getrennt aus.
+
+Das UI wird **allein aus `export-manifest.json`** erzeugt. Es liest die
+Threema-Datenbank nicht erneut, und `msgx ui` lässt sich jederzeit erneut
+aufrufen, ohne neu zu extrahieren.
 
 ### Prüfen
 

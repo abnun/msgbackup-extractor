@@ -233,6 +233,7 @@ class Runner:
             chat_id=item.chat.chat_id if item.chat else None,
             original_filename=item.original_filename,
             timestamp=item.timestamp,
+            timestamp_source=item.timestamp_source,
             is_thumbnail=item.is_thumbnail,
             thumbnail_of=item.thumbnail_of,
         )
