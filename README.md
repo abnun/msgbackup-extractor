@@ -1,6 +1,6 @@
 # msgbackup-extractor
 
-**English** · [Deutsch](README.de.md)
+**English** · [Deutsch](README.de.md) · [Website](https://abnun.github.io/msgbackup-extractor/)
 
 Recover your own photos, videos, voice messages and documents from a local
 Apple iPhone backup — Threema and WhatsApp — without handing anything to a
@@ -21,26 +21,35 @@ msgx ui       --output ~/export                                # browse it
 
 ---
 
-## It proves, it does not promise
+## What you get
 
-Every guarantee below has a test that would fail if it stopped being true.
+A folder you can use like any other: photos, videos, voice messages and
+documents, sorted twice over — once by media type, once by chat — plus a page
+you double-click to look through them.
 
-| Guarantee | How it is verified |
-|---|---|
-| The backup is never modified | A fingerprint of every file — content, size, mtime — is taken before and after a full run and compared. Counter-tests confirm the fingerprint actually detects changes. |
-| No network access | No source module imports `socket`, `urllib`, `http` or similar. Checked statically, and again dynamically with `socket` disabled. |
-| Exported files are intact | The source SHA-256 is computed from the same bytes that get written; the destination hash is read back afterwards. Only the comparison counts as proof. |
-| No password in logs or arguments | There is no password option. A test introspects every subcommand to keep it that way. |
-| Nothing is guessed | Structure is measured at runtime. When it cannot be established, you get a diagnostic report instead of a result. |
+```
+export/threema/
+├── media/
+│   ├── images/  videos/  audio/  documents/
+│   └── thumbnails/
+├── chats/
+│   ├── Anna/{images,videos,audio,documents}/
+│   ├── Familie/…
+│   └── unassigned/       kept and visible, not discarded
+├── databases/
+└── index.html            double-click it, no server needed
+```
 
-Verified end to end against a real iPhone backup holding both messengers: every
-exported file's SHA-256 matched, no write failures, no integrity errors. Over
-90 % of the media could be assigned to a chat; the rest went to `unassigned/`
-rather than being guessed.
+The chat folders cost **no** extra disk space — they are hardlinks to the same
+files. `index.html` is a timeline, newest first, with filters for media type,
+year and chat, plus a search box. It is self-contained: no server, no network,
+nothing to install.
 
-The measurements behind that live in the design document. Concrete figures — how
-many files, how large, how long — are deliberately absent here: they would
-describe the author's own device and message volume, not the tool.
+What it cannot do is hand you a ZIP. A page opened from a file may *show* your
+files but not *read* them, so you select in the browser and `msgx collect`
+copies the selection out.
+
+Message texts are **not** exported.
 
 ---
 
@@ -520,6 +529,35 @@ the window, it does not close it.
 `--metadata-only` produces a **partial report** from the unencrypted plists:
 device, iOS version, encryption state and the detected messengers. File and
 media statistics are missing and are reported as missing, not as zero.
+
+---
+
+## Why you can check this yourself
+
+Most people can skip this section. It is here for the reader who wants to know
+why the promises above are worth anything, given that a tool touching a message
+archive can promise whatever it likes.
+
+Every guarantee below has a test that would fail if it stopped being true. The
+tests ship with the source, so this is checkable without taking anyone's word:
+`python -m pytest`.
+
+| Guarantee | How it is verified |
+|---|---|
+| The backup is never modified | A fingerprint of every file — content, size, mtime — is taken before and after a full run and compared. Counter-tests confirm the fingerprint actually detects changes. |
+| No network access | No source module imports `socket`, `urllib`, `http` or similar. Checked statically, and again dynamically with `socket` disabled. |
+| Exported files are intact | The source SHA-256 is computed from the same bytes that get written; the destination hash is read back afterwards. Only the comparison counts as proof. |
+| No password in logs or arguments | There is no password option. A test introspects every subcommand to keep it that way. |
+| Nothing is guessed | Structure is measured at runtime. When it cannot be established, you get a diagnostic report instead of a result. |
+
+Verified end to end against a real iPhone backup holding both messengers: every
+exported file's SHA-256 matched, no write failures, no integrity errors. Over
+90 % of the media could be assigned to a chat; the rest went to `unassigned/`
+rather than being guessed.
+
+The measurements behind that live in the design document. Concrete figures — how
+many files, how large, how long — are deliberately absent here: they would
+describe the author's own device and message volume, not the tool.
 
 ---
 

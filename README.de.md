@@ -1,6 +1,6 @@
 # msgbackup-extractor
 
-[English](README.md) · **Deutsch**
+[English](README.md) · **Deutsch** · [Website](https://abnun.github.io/msgbackup-extractor/)
 
 Holt die eigenen Fotos, Videos, Sprachnachrichten und Dokumente aus einem
 lokalen Apple-iPhone-Backup — Threema und WhatsApp — ohne dafür etwas an einen
@@ -21,27 +21,35 @@ msgx ui       --output ~/export                                # ansehen
 
 ---
 
-## Es weist nach, es behauptet nicht
+## Was dabei herauskommt
 
-Zu jeder Zusage unten gibt es einen Test, der fehlschlägt, wenn sie nicht mehr
-stimmt.
+Ein Ordner, den du behandeln kannst wie jeden anderen: Fotos, Videos,
+Sprachnachrichten und Dokumente, zweifach sortiert — einmal nach Medienart,
+einmal nach Chat — und eine Seite, die du doppelklickst, um alles durchzusehen.
 
-| Zusage | Wie sie nachgewiesen wird |
-|---|---|
-| Das Backup wird nicht verändert | Ein Fingerabdruck jeder Datei — Inhalt, Größe, Änderungszeit — wird vor und nach einem vollständigen Durchlauf genommen und verglichen. Gegentests belegen, dass der Fingerabdruck Änderungen tatsächlich erkennt. |
-| Kein Netzzugriff | Kein Quellmodul importiert `socket`, `urllib`, `http` oder Ähnliches. Statisch geprüft und zusätzlich dynamisch mit abgeschaltetem `socket`. |
-| Exportierte Dateien sind unversehrt | Der Quell-SHA-256 wird aus denselben Bytes gebildet, die geschrieben werden; der Ziel-Hash wird danach zurückgelesen. Erst der Vergleich ist der Nachweis. |
-| Kein Passwort in Log oder Argumenten | Es gibt keine Passwort-Option. Ein Test prüft jeden Unterbefehl, damit das so bleibt. |
-| Es wird nichts geraten | Strukturen werden zur Laufzeit gemessen. Was sich nicht feststellen lässt, führt zu einem Diagnosebericht statt zu einem Ergebnis. |
+```
+export/threema/
+├── media/
+│   ├── images/  videos/  audio/  documents/
+│   └── thumbnails/
+├── chats/
+│   ├── Anna/{images,videos,audio,documents}/
+│   ├── Familie/…
+│   └── unassigned/       bleibt sichtbar, wird nicht verworfen
+├── databases/
+└── index.html            doppelklicken, kein Server nötig
+```
 
-Von Anfang bis Ende an einem echten iPhone-Backup mit beiden Messengern geprüft:
-jede exportierte Datei mit übereinstimmendem SHA-256, kein Schreibfehler, kein
-Integritätsfehler. Über 90 % der Medien ließen sich einem Chat zuordnen, der
-Rest ging nach `unassigned/` statt geraten zu werden.
+Die Chat-Ordner kosten **keinen** zusätzlichen Speicher — sie sind Hardlinks auf
+dieselben Dateien. `index.html` ist eine Zeitleiste, neueste zuerst, mit Filtern
+für Medienart, Jahr und Chat und einer Namenssuche. Sie ist in sich
+geschlossen: kein Server, kein Netz, nichts zu installieren.
 
-Die Messungen dazu stehen im Designdokument. Konkrete Zahlen — wie viele
-Dateien, wie groß, wie lange — fehlen hier absichtlich: sie beschreiben das
-Gerät und das Nachrichtenvolumen des Autors, nicht das Werkzeug.
+Was sie nicht kann, ist dir ein ZIP geben. Eine aus einer Datei geöffnete Seite
+darf deine Dateien *anzeigen*, aber nicht *lesen* — du wählst also im Browser
+aus, und `msgx collect` kopiert die Auswahl heraus.
+
+Nachrichtentexte werden **nicht** exportiert.
 
 ---
 
@@ -539,6 +547,35 @@ Null.
 
 ---
 
+## Warum du das selbst nachprüfen kannst
+
+Diesen Abschnitt kann man überspringen. Er ist für den Leser, der wissen will,
+warum die Zusagen weiter oben etwas wert sind — schließlich kann ein Werkzeug,
+das ein Nachrichtenarchiv anfasst, behaupten was es will.
+
+Zu jeder Zusage unten gibt es einen Test, der fehlschlägt, wenn sie nicht mehr
+stimmt. Die Tests liegen im Quellcode, das ist also nachprüfbar, ohne jemandem
+glauben zu müssen: `python -m pytest`.
+
+| Zusage | Wie sie nachgewiesen wird |
+|---|---|
+| Das Backup wird nicht verändert | Ein Fingerabdruck jeder Datei — Inhalt, Größe, Änderungszeit — wird vor und nach einem vollständigen Durchlauf genommen und verglichen. Gegentests belegen, dass der Fingerabdruck Änderungen tatsächlich erkennt. |
+| Kein Netzzugriff | Kein Quellmodul importiert `socket`, `urllib`, `http` oder Ähnliches. Statisch geprüft und zusätzlich dynamisch mit abgeschaltetem `socket`. |
+| Exportierte Dateien sind unversehrt | Der Quell-SHA-256 wird aus denselben Bytes gebildet, die geschrieben werden; der Ziel-Hash wird danach zurückgelesen. Erst der Vergleich ist der Nachweis. |
+| Kein Passwort in Log oder Argumenten | Es gibt keine Passwort-Option. Ein Test prüft jeden Unterbefehl, damit das so bleibt. |
+| Es wird nichts geraten | Strukturen werden zur Laufzeit gemessen. Was sich nicht feststellen lässt, führt zu einem Diagnosebericht statt zu einem Ergebnis. |
+
+Von Anfang bis Ende an einem echten iPhone-Backup mit beiden Messengern geprüft:
+jede exportierte Datei mit übereinstimmendem SHA-256, kein Schreibfehler, kein
+Integritätsfehler. Über 90 % der Medien ließen sich einem Chat zuordnen, der
+Rest ging nach `unassigned/` statt geraten zu werden.
+
+Die Messungen dazu stehen im Designdokument. Konkrete Zahlen — wie viele
+Dateien, wie groß, wie lange — fehlen hier absichtlich: sie beschreiben das
+Gerät und das Nachrichtenvolumen des Autors, nicht das Werkzeug.
+
+---
+
 ## Abhängigkeiten
 
 | Paket | Version | Lizenz | Zweck |
@@ -665,18 +702,17 @@ Werkzeug nur einen Diagnosebericht erzeugen.
 
 ## Bestimmungsgemäße Verwendung
 
-> [!IMPORTANT]
-> Dieses Werkzeug ist für das **eigene** Backup auf dem **eigenen** Rechner.
+> **Wichtig** — Dieses Werkzeug ist für das **eigene** Backup auf dem **eigenen**
+> Rechner.
 
 Backups enthalten Nachrichten, die mit anderen Menschen gewechselt wurden. Die
 rein private Nutzung fällt unter die Haushaltsausnahme der DSGVO (Art. 2 Abs. 2
 lit. c); **das Veröffentlichen oder Weitergeben extrahierter Daten nicht — ab
 dann sind Sie dafür verantwortlich.**
 
-> [!CAUTION]
-> Es auf das Backup einer anderen Person anzuwenden, kann ohne Befugnis eine
-> **Straftat** sein — in Deutschland etwa nach § 202a StGB (Ausspähen von
-> Daten). Tun Sie das nicht.
+> **Achtung, Strafbarkeit** — Es auf das Backup einer anderen Person anzuwenden,
+> kann ohne Befugnis eine **Straftat** sein, in Deutschland etwa nach § 202a
+> StGB (Ausspähen von Daten). Tun Sie das nicht.
 
 Threema, WhatsApp und Signal sind Marken der jeweiligen Inhaber und werden hier
 nur genannt, um zu beschreiben, welche Formate gelesen werden können. Dieses

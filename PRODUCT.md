@@ -12,9 +12,22 @@ Ein Kommandozeilenwerkzeug für macOS, das Messenger-Daten aus einem lokalen
 Apple-iPhone-Backup identifiziert und in eine normale Dateistruktur exportiert.
 Unterstützt: Threema, WhatsApp, Signal (Letzteres nur erkennend, siehe unten).
 
+## Der Nutzen
+
+**Jahre an Fotos, Videos und Sprachnachrichten kommen als normale Ordner
+zurück** — sortiert nach Chat und Datum, durchsehbar im Browser, ohne dass ein
+Cloud-Dienst sie anfasst. Wer sie extrahiert hat, kann sie danach behandeln wie
+jede andere Datei: kopieren, sichern, verschenken, drucken.
+
+Das ist der Grund, aus dem jemand das Werkzeug sucht. Alles Weitere ist die
+Antwort auf die Frage, ob man ihm dabei trauen kann.
+
 ## Der einzigartige Mechanismus
 
-**Es behauptet nichts, es weist nach.** Jede Zusage hat eine Prüfung:
+**Es behauptet nichts, es weist nach.** Das ist die Eigenschaft, die es von
+anderen Extraktoren unterscheidet — aber es ist die Antwort auf eine Rückfrage,
+nicht der Grund für den Besuch. Auf einer Startseite gehört sie hinter den
+Nutzen, nicht davor. Jede Zusage hat eine Prüfung:
 
 | Zusage | Nachweis |
 |---|---|
@@ -97,8 +110,21 @@ keine Verbindung zu ihnen.
 
 Keine. Es gibt kein bestehendes Logo, keine Hausfarben, keine Schrift.
 
-## Was diese erste Oberfläche beweisen muss
+## Was diese erste Oberfläche leisten muss
 
-Dass Nachprüfbarkeit hier keine Marketingfloskel ist. Jemand, der die Seite
-verlässt, soll gesehen haben, *woran* er das überprüfen kann — nicht gelesen
-haben, dass es sicher sei.
+Jemand landet dort, weil er nach „WhatsApp-Bilder aus iPhone-Backup holen"
+gesucht hat. Er soll in wenigen Sekunden wissen:
+
+1. **Kommt mein Zeug raus?** Welche Messenger, welche Dateiarten.
+2. **Was bekomme ich?** Ordner nach Chat und Datum, plus eine Seite zum
+   Durchsehen. Das ist das Ergebnis, und es sollte man sehen können.
+3. **Was brauche ich?** Einen Mac, ein lokales Backup, ein Terminal. Ehrlich
+   gesagt, nicht schöngeredet: es ist ein Kommandozeilenwerkzeug.
+4. **Kann ich dem trauen?** Nur lesend, kein Netz, Hashes geprüft — kurz, und
+   mit Weg zum Nachlesen für die, die es genauer wollen.
+5. **Wie fange ich an?**
+
+**Was die Seite nicht sein darf:** eine Nachweis-Tabelle als Aufmacher. Die
+Nachprüfbarkeit ist das Beste an diesem Projekt, aber sie beantwortet Frage 4,
+nicht Frage 1. Wer mit Punkt 4 anfängt, redet über sich selbst statt über den
+Besucher.
