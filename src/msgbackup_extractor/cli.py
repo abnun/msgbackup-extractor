@@ -19,12 +19,12 @@ from msgbackup_extractor import __version__
 from msgbackup_extractor.analysis import AnalysisBlocked, AnalysisReport, Analyzer
 from msgbackup_extractor.apps.registry import profile_slugs
 from msgbackup_extractor.apps.registry import profile_slugs as _profile_slugs  # noqa: F401
-from msgbackup_extractor.core import reports
+from msgbackup_extractor.core import platforms, reports
 from msgbackup_extractor.core.backup import (
     AppleBackup,
     BackupAccessError,
     NotABackupError,
-    default_backup_root,
+    default_backup_roots,
     list_local_backups,
 )
 from msgbackup_extractor.core.encryption import DecryptionError, WrongPasswordError
@@ -356,7 +356,8 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Beispiel mit der Zwischenablage:\n"
-            "  pbpaste | msgx collect --output EXPORT --target ~/Auswahl --selection -"
+            f"  {platforms.clipboard_command()} | msgx collect "
+            "--output EXPORT --target ZIEL --selection -"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -451,22 +452,46 @@ def _open_session(
     return BackupSession(backup, password_provider=provider)
 
 
+#: Wie man auf dem jeweiligen System ein lokales Backup erstellt.
+_HOW_TO_BACKUP = {
+    "macOS": (
+        "Ein lokales Backup erstellst du im Finder: iPhone anschliessen, in der\n"
+        'Seitenleiste auswaehlen, "Sichere alle Daten des iPhone auf diesem Mac"\n'
+        'aktivieren, Verschluesselung einschalten, dann "Jetzt sichern".'
+    ),
+    "Windows": (
+        "Ein lokales Backup erstellst du in der Apple-Geraete-App (oder in iTunes):\n"
+        'iPhone anschliessen, "Backups" oeffnen, "Sichern auf diesem Computer"\n'
+        'waehlen, Verschluesselung einschalten, dann "Jetzt sichern".'
+    ),
+}
+
+
 def _report_available_backups(root: Path | None = None) -> int:
     """Listet gefundene Backups auf. Rueckgabewert ist der Exitcode."""
-    directory = root or default_backup_root()
+    searched = (root,) if root is not None else default_backup_roots()
     try:
-        found = list_local_backups(directory)
+        found = list_local_backups(root)
     except BackupAccessError as error:
         print(f"Fehler: {error}", file=sys.stderr)
         return EXIT_ERROR
 
     if not found:
-        print(f"Keine Backups gefunden unter:\n    {directory}", file=sys.stderr)
+        system = platforms.platform_name()
+        print(f"Keine Backups gefunden. Gesucht wurde auf {system} unter:", file=sys.stderr)
+        for directory in searched:
+            state = "existiert nicht" if not directory.exists() else "leer"
+            print(f"    {directory}   ({state})", file=sys.stderr)
+        if not searched:
+            print(
+                "    (fuer dieses System ist kein Standardort bekannt)", file=sys.stderr
+            )
+        advice = _HOW_TO_BACKUP.get(system)
+        if advice:
+            print(f"\n{advice}", file=sys.stderr)
         print(
-            "\nEin lokales Backup erstellst du im Finder: iPhone anschliessen, "
-            "in der Seitenleiste auswaehlen, \n"
-            '"Sichere alle Daten des iPhone auf diesem Mac" aktivieren, '
-            "Verschluesselung einschalten,\ndann \"Jetzt sichern\".",
+            "\nLiegt das Backup woanders, gib den Pfad direkt an:\n"
+            "    msgx analyze --backup PFAD",
             file=sys.stderr,
         )
         return EXIT_ERROR

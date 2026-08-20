@@ -1102,3 +1102,50 @@ Original ist nicht enthalten. Diese Kacheln können nicht scharf werden. Sie
 sind als „nur Vorschau" gekennzeichnet, die Einzelansicht nennt die Auflösung
 und erklärt, dass es nichts Schärferes gibt. Eine Unschärfe, deren Grund
 dransteht, ist kein Fehler mehr — eine unerklärte schon.
+
+
+---
+
+## 26. Nachtrag: Plattformabhängiges an einer Stelle (2026-08-20)
+
+Für eine Windows-Installationsanleitung musste zuerst geklärt werden, ob das
+Programm dort überhaupt läuft. Gemessene Bindung an macOS:
+
+| Stelle | Bindung |
+|---|---|
+| `backup.py` `DEFAULT_BACKUP_ROOT` | ein fest verdrahteter macOS-Pfad |
+| `paths.py` Cloud-Marker | `Library/Mobile Documents` gibt es nur auf macOS |
+| CLI-Beispiel und UI-Dialog | `pbpaste` |
+| Rechte-Meldung | „Festplattenvollzugriff" |
+
+Alles Übrige ist plattformunabhängig: die importierten Module sind
+ausschließlich Standardbibliothek plus `cryptography`, und es gab **keine
+einzige** Plattformabfrage im Code.
+
+### 26.1 Lösung
+
+Ein neues Modul `core/platforms.py` besitzt diese vier Dinge. Zwei Tests halten
+das durch: einer verbietet `sys.platform`, `platform.system()` und `os.name`
+außerhalb dieses Moduls, der andere verbietet fest verdrahtete
+macOS-Pfade — sonst wandern Betriebssystem-Annahmen unbemerkt zurück in den
+übrigen Code.
+
+Windows kennt **zwei** Backup-Orte, weil iTunes und die Apple-Geräte-App
+unterschiedliche Verzeichnisse verwenden. `list_local_backups()` durchsucht
+beide und führt die Ergebnisse zusammen; ein gesperrtes Verzeichnis darf ein
+lesbares nicht verdecken, und ein Rechtefehler wird nur gemeldet, wenn
+insgesamt nichts gefunden wurde.
+
+Für unbekannte Systeme wird **kein Ort erfunden**. `msgx backups` nennt dann,
+dass es keinen kennt, und verweist auf `--backup`.
+
+### 26.2 Was die Tests leisten und was nicht
+
+Sie täuschen `sys.platform` vor und prüfen, dass die richtigen Pfade, Befehle
+und Hinweise herauskommen — einschließlich der Fälle „iCloud-Ordner heißt unter
+Windows anders" und „der macOS-iCloud-Pfad ist unter Windows nicht besonders".
+
+Was sie **nicht** leisten: bestätigen, dass Apples Geräte-App ihre Backups
+tatsächlich unter `%USERPROFILE%\Apple\MobileSync\Backup` ablegt. Diese Pfade
+stammen aus der Dokumentation. Das steht als Einschränkung in der README, statt
+Windows-Unterstützung zu behaupten, die niemand nachgeprüft hat.

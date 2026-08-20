@@ -26,6 +26,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Final
 
+from msgbackup_extractor.core import platforms
 from msgbackup_extractor.core.logging_setup import get_logger
 from msgbackup_extractor.extract.export_manifest import MANIFEST_NAME, LoadedManifest
 from msgbackup_extractor.models import FileOutcome, SourceKind, TimestampSource
@@ -308,6 +309,9 @@ def build_index(
         "udid": manifest.backup_udid,
         "generated_at": manifest.generated_at,
         "tool_version": raw.get("tool_version"),
+        # Der Befehl, der die Zwischenablage in eine Pipe schreibt -
+        # je System ein anderer. Die Seite nennt ihn im Uebergabedialog.
+        "clipboard": platforms.clipboard_command(),
         "chats": chats,
         "counts": {
             "entries": len(entries),
@@ -555,6 +559,9 @@ def build_combined_index(
         "udid": None,
         "generated_at": max(generated) if generated else None,
         "tool_version": None,
+        # Der Befehl, der die Zwischenablage in eine Pipe schreibt -
+        # je System ein anderer. Die Seite nennt ihn im Uebergabedialog.
+        "clipboard": platforms.clipboard_command(),
         "messengers": messengers,
         "sources": per_messenger,
         "chats": [c["n"] for c in chats],

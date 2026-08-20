@@ -1,7 +1,9 @@
 # Messenger Backup Extractor
 
-Lokales Kommandozeilenwerkzeug für macOS, das Messenger-Daten aus einem lokalen
+Lokales Kommandozeilenwerkzeug, das Messenger-Daten aus einem lokalen
 Apple-iPhone-Backup identifiziert und in eine normale Dateistruktur exportiert.
+Entwickelt und erprobt auf **macOS**; **Windows** ist implementiert, aber nicht
+an einem echten Backup getestet (siehe [Voraussetzungen](#voraussetzungen)).
 
 Unterstützt werden **Threema**, **WhatsApp** und **Signal**. Die App-Erkennung
 ist als Plugin gebaut; ein weiterer Messenger braucht nur ein neues Profil.
@@ -182,21 +184,121 @@ gemessenen Befunde steht in
 
 ## Voraussetzungen
 
-- macOS
-- Python 3.12 oder neuer
-- ein lokales Finder-Backup des iPhones
-- „Festplattenvollzugriff" für das Terminal, um
-  `~/Library/Application Support/MobileSync/Backup/` lesen zu können
-  (Systemeinstellungen → Datenschutz & Sicherheit → Festplattenvollzugriff)
+| | macOS | Windows |
+|---|---|---|
+| Betriebssystem | macOS (entwickelt und geprüft) | Windows 10 oder 11 (siehe Einschränkung unten) |
+| Python | 3.12 oder neuer | 3.12 oder neuer |
+| Backup | lokales Finder-Backup | lokales Backup aus der Apple-Geräte-App oder iTunes |
+| Zusätzlich | „Festplattenvollzugriff" für das Terminal | nichts — die Backups liegen im Benutzerprofil |
+| Platz | etwa so viel wie das Backup groß ist | ebenso |
+
+### Zum Platzbedarf
+
+Der Export ist etwa so groß wie die Daten des Messengers im Backup. Die
+Chat-Struktur kostet **nichts** zusätzlich, weil sie per Hardlink auf dieselben
+Daten zeigt — im erprobten Fall sparte das [Menge entfernt] bei Threema und [Menge entfernt] bei
+WhatsApp. Das Backup selbst bleibt unangetastet und muss nicht kopiert werden.
+
+### Einschränkung: Windows ist nicht erprobt
+
+Entwickelt und an einem echten Backup geprüft wurde ausschließlich auf **macOS**.
+Der Kern ist plattformunabhängig — SQLite, plistlib, hashlib, `cryptography`
+und das Formatparsing laufen überall, wo Python läuft. Betriebssystemabhängig
+sind genau vier Dinge, und die stehen gesammelt in `core/platforms.py`: wo
+Backups liegen, welche Ordner in die Cloud synchronisiert werden, wie die
+Zwischenablage in eine Pipe kommt, und was bei fehlenden Rechten zu tun ist.
+
+Die Windows-Pfade stammen aus Apples Dokumentation und dem üblichen Verhalten
+der Apple-Geräte-App, **nicht aus einem Testlauf auf einem Windows-Rechner**.
+Tests täuschen das Betriebssystem vor und prüfen, dass die richtigen Pfade und
+Hinweise herauskommen; dass Apple die Backups dort tatsächlich ablegt, können
+sie nicht bestätigen.
+
+Findet das Programm auf Windows kein Backup, hilft `--backup` mit dem vollen
+Pfad — der restliche Ablauf ist davon unabhängig. Wenn du es dort ausprobierst,
+ist ein Bericht willkommen.
 
 ## Installation
 
+### macOS
+
 ```bash
-python3.12 -m venv ~/.venvs/msgbackup-extractor
+# 1. Python 3.12 prüfen
+python3 --version
+
+# 2. Projekt holen
+git clone https://github.com/abnun/msgbackup-extractor.git
+cd msgbackup-extractor
+
+# 3. Virtuelle Umgebung anlegen — NICHT in iCloud Drive, siehe unten
+python3 -m venv ~/.venvs/msgbackup-extractor
 ~/.venvs/msgbackup-extractor/bin/pip install -e ".[dev]"
+
+# 4. Prüfen
+~/.venvs/msgbackup-extractor/bin/msgx --version
+~/.venvs/msgbackup-extractor/bin/python -m pytest
 ```
 
-### Wichtig: venv nicht in iCloud Drive anlegen
+Bequemer wird es mit einem Alias in `~/.zshrc`:
+
+```bash
+alias msgx="$HOME/.venvs/msgbackup-extractor/bin/msgx"
+```
+
+**„Festplattenvollzugriff" erteilen.** Ohne diese Berechtigung kann das
+Terminal `~/Library/Application Support/MobileSync/Backup/` nicht lesen:
+Systemeinstellungen → Datenschutz & Sicherheit → Festplattenvollzugriff →
+Terminal hinzufügen → **Terminal beenden und neu starten**. Der letzte Schritt
+ist nötig, die Änderung greift nicht im laufenden Prozess.
+
+### Windows
+
+```powershell
+# 1. Python 3.12 prüfen (aus python.org oder dem Microsoft Store)
+py --version
+
+# 2. Projekt holen
+git clone https://github.com/abnun/msgbackup-extractor.git
+cd msgbackup-extractor
+
+# 3. Virtuelle Umgebung anlegen
+py -m venv .venv
+.\.venv\Scripts\pip install -e ".[dev]"
+
+# 4. Prüfen
+.\.venv\Scripts\msgx --version
+.\.venv\Scripts\python -m pytest
+```
+
+Danach zeigt
+
+```powershell
+.\.venv\Scripts\msgx backups
+```
+
+welche Backups gefunden wurden. Gesucht wird an beiden üblichen Orten, weil
+iTunes und die Apple-Geräte-App unterschiedliche Verzeichnisse verwenden:
+
+```text
+%APPDATA%\Apple Computer\MobileSync\Backup     (iTunes)
+%USERPROFILE%\Apple\MobileSync\Backup          (Apple-Geräte-App)
+```
+
+Findet es nichts, nennt die Meldung beide Pfade samt Zustand. Dann hilft der
+volle Pfad:
+
+```powershell
+.\.venv\Scripts\msgx analyze --backup "C:\Users\DU\Apple\MobileSync\Backup\<UDID>"
+```
+
+**Bei der Auswahl aus der Ansicht** heißt der Befehl für die Zwischenablage
+unter Windows anders; der Übergabedialog nennt automatisch den richtigen:
+
+```powershell
+powershell -Command Get-Clipboard | msgx collect --output EXPORT --target ZIEL --selection -
+```
+
+### Wichtig auf macOS: venv nicht in iCloud Drive anlegen
 
 Liegt das virtuelle Environment innerhalb von
 `~/Library/Mobile Documents/com~apple~CloudDocs/` (iCloud Drive), setzt der
@@ -235,9 +337,23 @@ Exporte werden pro Messenger getrennt:
     └── signal/
 ```
 
-Das Programm bricht ab, wenn `--output` in einem Cloud-Sync-Container liegt
-(iCloud Drive, Dropbox, OneDrive, Google Drive). Sonst würde macOS die
-extrahierten Daten selbsttätig hochladen.
+Unter Windows entsprechend, etwa `C:\Users\DU\messenger-extract\`.
+
+Das Programm bricht ab, wenn `--output` in einem Cloud-Sync-Container liegt.
+Erkannt werden je System die üblichen Ablagen:
+
+| | erkannt als synchronisiert |
+|---|---|
+| macOS | `~/Library/Mobile Documents` (iCloud Drive), `~/Library/CloudStorage` |
+| Windows | `%USERPROFILE%\iCloudDrive`, `%USERPROFILE%\OneDrive` |
+| überall | Dropbox, OneDrive, Google Drive, pCloud, Nextcloud, ownCloud, Seafile, MEGA, Sync.com |
+
+Sonst würde das Betriebssystem die extrahierten Daten selbsttätig hochladen —
+das Programm selbst kommuniziert nicht, das Ergebnis wäre aber dasselbe. Mit
+`--allow-cloud-output` lässt sich das bewusst erzwingen.
+
+Die Erkennung ist rein pfadbasiert und damit offline. Einen beliebig
+konfigurierten Sync-Ordner kann sie nicht kennen — das bleibt deine Aufgabe.
 
 ## Verwendung
 
@@ -600,10 +716,23 @@ Linting:
 
 ## Troubleshooting
 
-**`Kein Leserecht auf …` / `PermissionError`**
+**`Kein Leserecht auf …` / `PermissionError` (macOS)**
 Das Terminal braucht „Festplattenvollzugriff": Systemeinstellungen →
 Datenschutz & Sicherheit → Festplattenvollzugriff → Terminal hinzufügen und
-Terminal neu starten.
+Terminal **neu starten**. Der Neustart ist nötig; die Änderung greift nicht im
+laufenden Prozess.
+
+**`Keine Backups gefunden` (Windows)**
+Die Meldung nennt die durchsuchten Pfade samt Zustand. Häufige Ursachen: das
+Backup liegt in iCloud statt lokal (dann gibt es keine Dateien zu lesen), oder
+es wurde auf ein anderes Laufwerk verschoben. Mit dem vollen Pfad geht es
+trotzdem:
+`msgx analyze --backup "C:\Users\DU\Apple\MobileSync\Backup\<UDID>"`
+
+**`pbpaste: command not found` (Windows)**
+Das ist ein macOS-Befehl. Der Übergabedialog in der Ansicht nennt den für dein
+System richtigen; unter Windows lautet er
+`powershell -Command Get-Clipboard`.
 
 **`Das Passwort ist falsch`**
 Es ist das im Finder gesetzte Backup-Passwort, nicht der Gerätecode und nicht
@@ -654,6 +783,14 @@ Liegt das venv in iCloud Drive? Siehe den Abschnitt oben.
    (siehe oben).
 9. Der Cloud-Sync-Guard erkennt die üblichen Ablagen anhand des Pfads. Einen
    beliebig konfigurierten Sync-Ordner kann er nicht kennen.
+10. **Windows ist implementiert, aber nicht erprobt.** Entwickelt und an einem
+    echten Backup geprüft wurde ausschließlich macOS. Die Windows-Pfade stammen
+    aus Apples Dokumentation, nicht aus einem Testlauf. Tests täuschen das
+    Betriebssystem vor und prüfen die Pfadwahl; ob Apple die Backups dort
+    tatsächlich ablegt, können sie nicht bestätigen.
+11. Für andere Systeme (Linux, BSD) ist kein Standardort bekannt und es wird
+    keiner erfunden. Ein kopiertes oder mit libimobiledevice erzeugtes Backup
+    lässt sich über `--backup` trotzdem verarbeiten.
 
 Weitere Details: §17 des Design-Dokuments.
 

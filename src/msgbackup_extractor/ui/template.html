@@ -1239,7 +1239,9 @@ const DATA = /*__INDEX__*/;
   const shellQuote = (s) => "'" + s.replace(/'/g, "'\\''") + "'";
 
   function command() {
-    return "pbpaste | msgx collect \\\n" +
+    // Der Befehl kommt aus dem Index, weil er je Betriebssystem anders heisst.
+    const clip = DATA.clipboard || "pbpaste";
+    return clip + " | msgx collect \\\n" +
       "    --output " + shellQuote(exportDir()) + " \\\n" +
       "    --target ~/Auswahl \\\n" +
       "    --selection -";

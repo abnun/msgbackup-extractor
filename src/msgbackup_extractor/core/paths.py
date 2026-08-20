@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Final
 
+from msgbackup_extractor.core import platforms
+
 MAX_COMPONENT_LENGTH: Final = 200
 
 #: Zeichen, die in Dateinamen auf macOS/APFS Probleme machen oder als
@@ -41,20 +43,13 @@ _PLACEHOLDER: Final = "unbenannt"
 # Cloud-Sync-Erkennung
 # ---------------------------------------------------------------------------
 
-#: Relative Pfade unterhalb von $HOME, die als synchronisiert gelten.
-_CLOUD_MARKERS: Final[tuple[tuple[str, str], ...]] = (
-    ("Library/Mobile Documents", "iCloud Drive"),
-    ("Library/CloudStorage", "macOS Cloud Storage (Provider-Mount)"),
-    ("Dropbox", "Dropbox"),
-    ("OneDrive", "Microsoft OneDrive"),
-    ("Google Drive", "Google Drive"),
-    ("pCloud Drive", "pCloud"),
-    ("Sync", "Sync.com"),
-    ("Nextcloud", "Nextcloud"),
-    ("ownCloud", "ownCloud"),
-    ("Seafile", "Seafile"),
-    ("MEGA", "MEGA"),
-)
+#: Relative Pfade unterhalb von $HOME, die als synchronisiert gelten. Welche
+#: das sind, unterscheidet sich je Betriebssystem - siehe `core/platforms.py`.
+#: Erst zur Laufzeit abgefragt, damit ein Test die Plattform vortaeuschen kann.
+
+
+def _cloud_markers() -> tuple[tuple[str, str], ...]:
+    return platforms.cloud_markers()
 
 
 class CloudSyncedPathError(ValueError):
@@ -74,7 +69,7 @@ def detect_cloud_provider(path: Path, *, home: Path | None = None) -> str | None
     except OSError:  # pragma: no cover - defektes Dateisystem
         resolved = path.expanduser().absolute()
 
-    for marker, provider in _CLOUD_MARKERS:
+    for marker, provider in _cloud_markers():
         candidate = (home / marker).resolve() if (home / marker).exists() else home / marker
         if resolved == candidate or candidate in resolved.parents:
             return provider

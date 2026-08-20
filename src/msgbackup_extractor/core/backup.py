@@ -4,11 +4,13 @@ Dieses Modul ist der einzige Ort, der den Backup-Pfad besitzt. Alle Lesezugriffe
 laufen hierdurch, und zwar ausschliesslich mit `open(..., "rb")`. Geschrieben
 wird hier nichts - das Modul hat keine Schreibfunktion.
 
-Der Standardort lokaler Finder-Backups ist
-`~/Library/Application Support/MobileSync/Backup/<UDID>`. Der Zugriff darauf
-erfordert unter aktuellen macOS-Versionen "Festplattenvollzugriff" fuer das
-Terminal; ein `PermissionError` wird deshalb in eine erklaerende Meldung
+Wo Backups liegen und was bei fehlenden Rechten zu tun ist, unterscheidet sich
+je Betriebssystem. Beides kommt aus `core/platforms.py`, damit es genau eine
+Stelle dafuer gibt. Ein `PermissionError` wird in eine erklaerende Meldung
 uebersetzt statt rohe Fehler durchzulassen.
+
+Der Zugriff auf ein Backup ueber `--backup` funktioniert unabhaengig davon auf
+jedem System: dafuer braucht es nur ein lesbares Verzeichnis.
 """
 
 from __future__ import annotations
@@ -20,13 +22,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
 
+from msgbackup_extractor.core import platforms
 from msgbackup_extractor.core.logging_setup import get_logger
 from msgbackup_extractor.models import ApplicationInfo, BackupInfo, DeviceInfo
 
 logger = get_logger("backup")
-
-#: Standardort lokaler Finder-Backups, relativ zu $HOME.
-DEFAULT_BACKUP_ROOT: Final = Path("Library/Application Support/MobileSync/Backup")
 
 INFO_PLIST: Final = "Info.plist"
 MANIFEST_PLIST: Final = "Manifest.plist"
@@ -45,35 +45,59 @@ class BackupAccessError(RuntimeError):
     """Das Backup ist vorhanden, kann aber nicht gelesen werden."""
 
 
+def default_backup_roots(home: Path | None = None) -> tuple[Path, ...]:
+    """Alle Orte, an denen dieses System Backups ablegt.
+
+    Auf macOS ist das einer, auf Windows koennen es mehrere sein, weil iTunes
+    und die Apple-Geraete-App unterschiedliche Verzeichnisse verwenden.
+    """
+    return tuple(location.path for location in platforms.backup_locations(home))
+
+
 def default_backup_root(home: Path | None = None) -> Path:
-    """Der uebliche Ort lokaler Finder-Backups auf diesem Mac."""
-    return (home or Path.home()) / DEFAULT_BACKUP_ROOT
+    """Der erste Suchort. Fuer Meldungen, in denen ein einzelner Pfad genuegt.
+
+    Kennt dieses System keinen Standardort, wird ein Pfad unterhalb von $HOME
+    zurueckgegeben, damit die Meldung nicht leer bleibt.
+    """
+    roots = default_backup_roots(home)
+    if roots:
+        return roots[0]
+    return (home or Path.home()) / "MobileSync" / "Backup"
 
 
 def list_local_backups(root: Path | None = None) -> tuple[Path, ...]:
-    """Alle Backup-Verzeichnisse am Standardort, neueste zuerst.
+    """Alle Backup-Verzeichnisse an den Standardorten, neueste zuerst.
 
-    Hilft dem Nutzer beim Auffinden des Backups, ohne dass er die UDID kennen
+    Hilft beim Auffinden des Backups, ohne dass die Geraete-ID bekannt sein
     muss. Verzeichnisse ohne Manifest.plist werden uebergangen.
-    """
-    directory = root or default_backup_root()
-    try:
-        candidates = [p for p in directory.iterdir() if p.is_dir()]
-    except PermissionError as error:
-        raise BackupAccessError(_permission_hint(directory)) from error
-    except OSError:
-        return ()
 
-    found = [p for p in candidates if (p / MANIFEST_PLIST).is_file()]
+    Args:
+        root: Wenn gesetzt, wird nur dort gesucht. Ohne Angabe alle Orte, die
+            dieses System kennt.
+    """
+    directories = [root] if root is not None else list(default_backup_roots())
+    found: list[Path] = []
+    denied: Path | None = None
+
+    for directory in directories:
+        try:
+            candidates = [p for p in directory.iterdir() if p.is_dir()]
+        except PermissionError:
+            # Erst merken: ein zweiter Ort kann trotzdem lesbar sein.
+            denied = denied or directory
+            continue
+        except OSError:
+            continue
+        found.extend(p for p in candidates if (p / MANIFEST_PLIST).is_file())
+
+    if not found and denied is not None:
+        raise BackupAccessError(_permission_hint(denied))
     return tuple(sorted(found, key=lambda p: p.stat().st_mtime, reverse=True))
 
 
 def _permission_hint(path: Path) -> str:
-    return (
-        f"Kein Leserecht auf {path.name}. Unter macOS braucht das Terminal dafuer "
-        '"Festplattenvollzugriff": Systemeinstellungen > Datenschutz & Sicherheit > '
-        "Festplattenvollzugriff, dort das Terminal hinzufuegen und neu starten."
-    )
+    return platforms.permission_hint(path)
 
 
 # ---------------------------------------------------------------------------
