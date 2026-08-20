@@ -106,6 +106,9 @@ aside h2 {
   font-weight: 600;
 }
 .chip .n { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: 5px; }
+.chip:disabled, .row:disabled { opacity: .34; cursor: default; }
+.chip:disabled:hover, .row:disabled:hover { background: var(--panel-2); }
+.row:disabled:hover { background: transparent; }
 .chip[aria-pressed="true"] .n { color: inherit; opacity: .75; }
 .rows { display: flex; flex-direction: column; gap: 2px; }
 .row {
@@ -544,16 +547,36 @@ const DATA = /*__INDEX__*/;
     return parts.join(" · ");
   }
 
-  function apply() {
+  // Ein einziges Praedikat fuer beides: das Filtern selbst und das Zaehlen der
+  // Facetten. `over` ersetzt dabei gezielt die Auswahl einer Gruppe. Zwei
+  // getrennte Implementierungen wuerden mit Sicherheit auseinanderlaufen, und
+  // dann zeigt die Seitenleiste Zahlen, die zum Ergebnis nicht passen.
+  function makePredicate(over) {
+    const kinds = over.kinds ?? state.kinds;
+    const years = over.years ?? state.years;
+    const chats = over.chats ?? state.chats;
+    const flags = over.flags ?? state.flags;
     const q = state.q.trim().toLowerCase();
-    filtered = items.filter((it) => {
-      if (state.kinds.size && !state.kinds.has(it.k)) return false;
-      if (state.years.size && !(it._y && state.years.has(it._y))) return false;
-      if (state.chats.size && !(it.c !== undefined && state.chats.has(it.c))) return false;
-      for (const key of state.flags) if (!FLAGS[key].test(it)) return false;
+    return (it) => {
+      if (kinds.size && !kinds.has(it.k)) return false;
+      if (years.size && !(it._y && years.has(it._y))) return false;
+      if (chats.size && !(it.c !== undefined && chats.has(it.c))) return false;
+      for (const key of flags) if (!FLAGS[key].test(it)) return false;
       if (q && !it._s.includes(q)) return false;
       return true;
-    });
+    };
+  }
+
+  function countWith(over) {
+    const passes = makePredicate(over);
+    let n = 0;
+    for (const it of items) if (passes(it)) n++;
+    return n;
+  }
+
+  function apply() {
+    filtered = items.filter(makePredicate({}));
+    updateFacets();
     renderStatus();
     renderResults();
     renderTray();
@@ -561,13 +584,21 @@ const DATA = /*__INDEX__*/;
 
   /* --- Filterleiste ----------------------------------------------------- */
 
-  function chip(label, n, pressed, onClick) {
+  //: Merkt sich zu jeder Option ihr Element und wie sie zu zaehlen ist.
+  const facets = [];
+
+  function chip(label, pressed, onClick, over) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "chip";
     b.setAttribute("aria-pressed", pressed ? "true" : "false");
-    b.innerHTML = `${label}<span class="n">${num(n)}</span>`;
-    b.addEventListener("click", () => onClick(b));
+    const text = document.createElement("span");
+    text.textContent = label;
+    const n = document.createElement("span");
+    n.className = "n";
+    b.append(text, n);
+    b.addEventListener("click", () => { if (!b.disabled) onClick(b); });
+    facets.push({ button: b, number: n, over });
     return b;
   }
   function toggle(set, value, button) {
@@ -580,20 +611,30 @@ const DATA = /*__INDEX__*/;
     const kinds = document.getElementById("kinds");
     for (const k of ["image", "video", "audio", "document", "internal", "other"]) {
       if (!kindCounts[k]) continue;
-      kinds.append(chip(KIND_LABEL[k], kindCounts[k], false,
-        (b) => toggle(state.kinds, k, b)));
+      kinds.append(
+        chip(KIND_LABEL[k], false, (b) => toggle(state.kinds, k, b),
+             () => ({ kinds: new Set([k]) }))
+      );
     }
 
     const years = document.getElementById("years");
     for (const y of Object.keys(yearCounts).sort((a, b) => b - a)) {
-      years.append(chip(y, yearCounts[y], false,
-        (b) => toggle(state.years, Number(y), b)));
+      const year = Number(y);
+      years.append(
+        chip(y, false, (b) => toggle(state.years, year, b),
+             () => ({ years: new Set([year]) }))
+      );
     }
 
     const flags = document.getElementById("flags");
     for (const [key, f] of Object.entries(FLAGS)) {
       if (!f.n) continue;
-      flags.append(chip(f.label, f.n, false, (b) => toggle(state.flags, key, b)));
+      // Besonderheiten wirken untereinander verknuepfend: die Zahl zeigt, was
+      // bliebe, wenn diese zu den bereits gewaehlten hinzukommt.
+      flags.append(
+        chip(f.label, false, (b) => toggle(state.flags, key, b),
+             () => ({ flags: new Set([...state.flags, key]) }))
+      );
     }
 
     const list = document.getElementById("chats");
@@ -602,10 +643,15 @@ const DATA = /*__INDEX__*/;
       b.type = "button";
       b.className = "row";
       b.setAttribute("aria-pressed", "false");
-      b.innerHTML = `<span class="label"></span><span class="n">${num(chatCounts[index] || 0)}</span>`;
-      b.querySelector(".label").textContent = name;
+      const label = document.createElement("span");
+      label.className = "label";
+      label.textContent = name;
+      const n = document.createElement("span");
+      n.className = "n";
+      b.append(label, n);
       b.title = name;
-      b.addEventListener("click", () => toggle(state.chats, index, b));
+      b.addEventListener("click", () => { if (!b.disabled) toggle(state.chats, index, b); });
+      facets.push({ button: b, number: n, over: () => ({ chats: new Set([index]) }) });
       list.append(b);
     });
     if (!chats.length) {
@@ -613,6 +659,22 @@ const DATA = /*__INDEX__*/;
       p.className = "hint";
       p.textContent = "Keine Chat-Zuordnung vorhanden.";
       list.append(p);
+    }
+  }
+
+  // Nach jeder Filteraenderung: jede Option zeigt, was ihre Wahl ergaeben
+  // wuerde - unter Beruecksichtigung aller anderen Gruppen. Eine Option, die
+  // zu nichts fuehrt, wird abgeblendet statt eine Zahl zu zeigen, die zu einer
+  // leeren Ansicht fuehrt.
+  function updateFacets() {
+    for (const facet of facets) {
+      const n = countWith(facet.over());
+      facet.number.textContent = num(n);
+      const pressed = facet.button.getAttribute("aria-pressed") === "true";
+      facet.button.disabled = n === 0 && !pressed;
+      facet.button.title = facet.button.classList.contains("row")
+        ? facet.button.querySelector(".label").textContent
+        : facet.button.title;
     }
   }
 

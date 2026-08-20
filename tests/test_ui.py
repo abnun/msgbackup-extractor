@@ -405,3 +405,50 @@ def test_resetting_filters_keeps_the_selection(export_dir: Path) -> None:
     html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
     # Der Reset fasst nur die Filterknoepfe in der Seitenleiste an.
     assert 'document.querySelectorAll(\'aside [aria-pressed="true"]\')' in html
+
+
+def test_facet_counts_and_filtering_share_one_predicate(export_dir: Path) -> None:
+    """Zwei getrennte Implementierungen wuerden auseinanderlaufen.
+
+    Dann zeigt die Seitenleiste Zahlen, die zum Ergebnis nicht passen - und man
+    glaubt eher der Zahl als der Ansicht.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "function makePredicate(over)" in html
+    assert "filtered = items.filter(makePredicate({}))" in html
+    assert "function countWith(over)" in html
+    assert "const passes = makePredicate(over)" in html
+
+
+def test_facet_counts_are_updated_on_every_filter_change(export_dir: Path) -> None:
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "function updateFacets()" in html
+    # apply() ruft es auf, also greift es bei jeder Aenderung.
+    assert "    updateFacets();\n    renderStatus();" in html
+
+
+def test_a_facet_group_does_not_constrain_itself(export_dir: Path) -> None:
+    """Sonst zeigten alle nicht gewaehlten Jahre 0 und man kaeme nicht mehr weg.
+
+    Die Zahl einer Option beantwortet: was bliebe, wenn ich *diese* waehle -
+    unter Beruecksichtigung der anderen Gruppen, nicht der eigenen.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "years: new Set([year])" in html
+    assert "kinds: new Set([k])" in html
+    assert "chats: new Set([index])" in html
+
+
+def test_special_flags_count_cumulatively(export_dir: Path) -> None:
+    """Besonderheiten wirken verknuepfend, nicht alternativ."""
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "flags: new Set([...state.flags, key])" in html
+
+
+def test_options_leading_nowhere_are_disabled(export_dir: Path) -> None:
+    """Eine Option mit 0 Treffern soll nicht in eine leere Ansicht fuehren.
+
+    Gewaehlte Optionen bleiben bedienbar, sonst koennte man sie nicht abwaehlen.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "facet.button.disabled = n === 0 && !pressed" in html

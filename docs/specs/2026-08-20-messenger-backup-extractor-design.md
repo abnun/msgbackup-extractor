@@ -851,7 +851,36 @@ fiel auf, dass seine Meldung hart „Backup" nannte, obwohl hier der Export
 geschützt wird — sie ist jetzt über `forbidden_label` parametrisiert. Eine
 Meldung, die das Falsche nennt, schickt bei der Fehlersuche in die Irre.
 
-### 22.4 Am echten Export erprobt
+### 22.4 Facettierte Zählung in der Filterleiste
+
+Die Zahlen an den Filteroptionen waren zunächst statisch: bei gewähltem Jahr
+2025 stand bei „Videos" weiter 179, obwohl nur 20 davon aus 2025 stammen. Eine
+Zahl, die zum Ergebnis nicht passt, ist schlimmer als keine — man glaubt eher
+der Zahl als der Ansicht.
+
+Regel: **die Zahl einer Option beantwortet, was übrig bliebe, wenn man genau
+diese Option wählt** — unter Berücksichtigung aller *anderen* Gruppen, nicht der
+eigenen. Eine Gruppe darf sich nicht selbst einschränken, sonst zeigten alle
+nicht gewählten Jahre 0 und die Auswahl wäre eine Falle. Besonderheiten wirken
+untereinander verknüpfend, ihre Zahl gilt deshalb zusätzlich zu den bereits
+gewählten.
+
+Umsetzung: **ein** Prädikat (`makePredicate(over)`) dient sowohl dem Filtern als
+auch dem Zählen; `over` ersetzt gezielt die Auswahl einer Gruppe. Zwei getrennte
+Implementierungen wären mit Sicherheit auseinandergelaufen.
+
+Optionen ohne Treffer werden abgeblendet und deaktiviert — gewählte bleiben
+bedienbar, sonst könnte man sie nicht abwählen.
+
+Gemessen an [Anzahl entfernt] Einträgen und 45 Optionen sind das rund [Anzahl entfernt] Prüfungen je
+Filteränderung; unter einer Millisekunde je Option, also nicht spürbar.
+
+Kontrollrechnung aus dem echten Export: bei „Videos" gewählt summieren die
+Jahreszahlen 20 + 20 + 38 + 42 + 55 + 3 + 1 = 179 — genau die Gesamtzahl der
+Videos. Und „Ohne Datum" fällt auf 0, weil ein gewähltes Jahr undatierte
+Einträge zwangsläufig ausschließt.
+
+### 22.5 Am echten Export erprobt
 
 Filter auf „Videos", „Alle im Filter auswählen", Übergabedialog, dann
 `msgx collect --verify`:

@@ -154,7 +154,13 @@ Aufbau:
 
 - **Zeitachse**, neueste zuerst, mit Monatstrennern
 - **Filter** für Medientyp, Jahr, Chat und Besonderheiten (ohne Chat, ohne
-  Datum, nur Vorschaubild, Endung ≠ Inhalt) sowie Suche im Dateinamen
+  Datum, nur Vorschaubild, Endung ≠ Inhalt) sowie Suche im Dateinamen.
+  Die Zahlen sind **facettiert**: sie zeigen, was übrig bliebe, wenn du diese
+  Option wählst — unter Berücksichtigung aller anderen Filter. Wählst du 2025,
+  steht bei „Videos" nicht mehr 179, sondern 20. Optionen, die zu nichts führen,
+  werden abgeblendet, statt eine Zahl zu zeigen, die in eine leere Ansicht
+  führt. Eine Gruppe schränkt sich dabei nicht selbst ein — sonst zeigten alle
+  nicht gewählten Jahre 0 und man käme nicht mehr weg.
 - **Einzelansicht** mit Original, Videoplayer, Metadaten und Tastaturnavigation
   (`←` `→` blättern, `Leer` auswählen, `Esc` schließen)
 - **Auswahl**: Häkchen auf jeder Kachel, mit gedrückter Umschalttaste ein ganzer
