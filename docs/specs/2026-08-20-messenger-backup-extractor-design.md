@@ -562,8 +562,8 @@ gebaute Artefakt, weil alles Weitere darauf aufbaut.
 | 1 | `analyze` für unverschlüsselte Backups: `backup`, `manifest`, `sqlite_ro`, `media`, `paths`, `reports`, `threema`-Detection, CLI | — |
 | 2 | Verschlüsselte Backups: `keybag`, `encryption`, Manifest-Entschlüsselung, `getpass`-Flow | — |
 | 3 | Vollständige Testsuite für Phase 0–2 | **Nutzer führt `analyze` auf echtem Backup aus und liefert anonymisierten Bericht** |
-| 4 | `extract` + `verify`: `planner`, `runner`, `--dry-run`, `--deduplicate`, Export-Manifest, Integrität, Tests | — |
-| 5 | `database`-Subcommand + `--organize-by-chat` auf Basis des real vorgefundenen Schemas | — |
+| 4 | `extract` + `verify`: `planner`, `runner`, `--dry-run`, `--deduplicate`, Export-Manifest, Integrität, Tests | **erledigt** |
+| 5 | `database`-Subcommand + `--organize-by-chat` auf Basis des real vorgefundenen Schemas | **erledigt** |
 | 6 | README vollständig + zweites App-Profil (WhatsApp oder Signal) zur Validierung des Interfaces | — |
 | 7 | Lokales UI zum Durchsehen des Exports (siehe §18) | — |
 
@@ -695,3 +695,60 @@ davon 12 Gruppen; 84 Kontakte.
 Im Threema-Container liegen App-Interna, die keine Nutzdaten sind: 12 PLIST,
 2 LOG sowie `observations.db` und `tips-store.db` (Apple-Frameworks). Sie gehen
 nach `metadata/` bzw. `databases/`, nicht in die Medienverzeichnisse.
+
+
+---
+
+## 20. Nachtrag: Core-Data-Markierungsbyte (2026-08-20)
+
+Beim Probelauf am echten Backup fiel auf, dass 434 Dateien in der Kategorie
+`other` landeten und 399 als Video galten, obwohl das Backup nur 176
+Videodateien enthält. Ursache war ein Byte:
+
+Core Data stellt **jedem** Blob in einer Spalte mit „Allows External Storage"
+ein Markierungsbyte voran:
+
+| Byte 0 | Bedeutung |
+|---|---|
+| `0x01` | Die Daten folgen unmittelbar (inline). |
+| `0x02` | Es folgt eine 36-Byte-UUID und `0x00` — Referenz auf `_EXTERNAL_DATA`. |
+
+Am echten Backup ausgezählt: alle [Anzahl entfernt] Inline-Blobs beginnen mit `0x01`, alle
+[Anzahl entfernt] Referenzen mit `0x02`. Ohne Abschneiden des `0x01`:
+
+* Jede aus der Datenbank exportierte Datei wäre um ein Byte verschoben, also
+  unbrauchbar — [Anzahl entfernt] davon JPEGs.
+* Die Signaturerkennung greift nicht, weil die Magic Bytes an Offset 1 stehen.
+  Der Typ wird dann über den Dateinamen geraten, was 399 statt 179 Videos ergab.
+
+Nach dem Abschneiden sind [Anzahl entfernt] der [Anzahl entfernt] Blobs per Signatur eindeutig ([Anzahl entfernt]
+JPEG, 18 PNG, 8 ISO-BMFF, 1 PDF, 1 GIF; 2 bleiben unbekannt).
+
+Umsetzung: `MediaSource.byte_offset` trägt die Zahl der zu überspringenden
+Bytes, gesetzt vom App-Profil und angewendet in `extract/sources.py`. Ein
+unerwarteter erster Wert wird **gemeldet, nicht abgeschnitten** — falsch
+abzuschneiden wäre schlimmer, weil es unbemerkt bliebe.
+
+Lehre für die Fixtures: der Fehler existierte, weil der Fixture-Generator das
+Markierungsbyte nicht setzte. Ein Fixture, das einfacher ist als die
+Wirklichkeit, beweist nichts. Der Generator setzt es jetzt.
+
+---
+
+## 21. Ergebnis am echten Backup (2026-08-20)
+
+| | |
+|---|---|
+| Extrahiert | [Anzahl entfernt] Dateien, [Menge entfernt] |
+| Fehlgeschlagen | 0 |
+| Integritätsfehler | 0 |
+| Laufzeit | [Dauer entfernt] |
+| Chat-Zuordnung | [Anzahl entfernt] ([Anteil entfernt]), 699 nach `unassigned/` |
+| Chats | 25 |
+| Per Hardlink gespart | [Menge entfernt] |
+| `verify` | [Anzahl entfernt] in Ordnung |
+
+Stichprobe von 400 exportierten Bildern: alle mit gültiger Signatur, JPEGs mit
+korrekter Endmarke `FFD9`, keine Datei mit verbliebenem `0x01`-Vorspann.
+
+Das Backup blieb unverändert; es entstanden keine SQLite-Nebenprodukte.

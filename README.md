@@ -13,11 +13,15 @@ gebaut, WhatsApp und Signal sind vorgesehen.
 > | `analyze` | fertig, auch für verschlüsselte Backups |
 > | `database` | fertig, auch für verschlüsselte Backups |
 > | `backups` | fertig |
-> | `extract` | in Arbeit |
-> | `verify` | in Arbeit |
+> | `extract` | fertig, inkl. Chat-Zuordnung |
+> | `verify` | fertig |
 >
-> Danach vorgesehen: Chat-Zuordnung (`--organize-by-chat`), ein zweites
-> App-Profil (WhatsApp/Signal) und ein lokales UI zum Durchsehen des Exports.
+> Danach vorgesehen: ein zweites App-Profil (WhatsApp/Signal) und ein lokales
+> UI zum Durchsehen des Exports.
+>
+> An einem echten Backup erprobt: iPhone, iOS, [Menge entfernt], Threema
+> [Version entfernt] — [Anzahl entfernt] Dateien / [Menge entfernt] extrahiert, 0 Fehler, 0
+> Integritätsfehler, 93 % der Medien einem Chat zugeordnet.
 >
 > Die Extraktion wird gebaut, sobald die Analyse gegen ein echtes Backup
 > geprüft ist — damit sie sich an der tatsächlich vorgefundenen Struktur
@@ -70,6 +74,71 @@ Nützliche Optionen:
 | `--no-media-inspection` | keine Nutzdateien lesen (schneller, ohne Formatstatistik) |
 | `--verbose` | technische Details, weiterhin ohne Nachrichteninhalte |
 | `--show-paths` | Dateipfade im Klartext statt maskiert |
+
+### Extrahieren
+
+Erst ein Probelauf — er schreibt nichts:
+
+```bash
+msgx extract \
+    --backup "~/messenger-extract/backup/<UDID>" \
+    --output "~/messenger-extract/export/threema" \
+    --dry-run
+```
+
+Dann echt:
+
+```bash
+msgx extract \
+    --backup "~/messenger-extract/backup/<UDID>" \
+    --output "~/messenger-extract/export/threema"
+```
+
+Probelauf und echter Lauf verwenden **denselben Plan**; der Probelauf kann sich
+also nicht anders verhalten als der Ernstfall. Was er nicht tut: Inhaltshashes
+bilden — dafür müsste er alle Daten lesen und wäre so teuer wie der echte Lauf.
+Duplikate werden daher erst beim echten Export erkannt.
+
+Ergebnisstruktur:
+
+```
+export/threema/
+├── media/
+│   ├── images/  videos/  audio/  documents/  other/
+│   └── thumbnails/          Vorschaubilder der App, mit Verweis aufs Original
+├── chats/
+│   ├── <Chatname>/{images,videos,audio,documents,thumbnails}/
+│   └── unassigned/          alles ohne belegbare Zuordnung
+├── databases/               die App-Datenbanken
+├── metadata/                App-Interna (plists, Logs)
+├── reports/extraction-report.json
+└── export-manifest.json
+```
+
+`media/` und `chats/` zeigen per **Hardlink** auf dieselben Daten und belegen
+den Speicher deshalb nur einmal. Im erprobten Export sparte das [Menge entfernt].
+
+Optionen:
+
+| Option | Wirkung |
+|---|---|
+| `--dry-run` | schreibt nichts, zeigt nur an |
+| `--no-organize-by-chat` | nur `media/`, keine Chat-Struktur |
+| `--no-hardlinks` | Kopien statt Hardlinks (doppelter Speicherbedarf) |
+| `--no-thumbnails` | Vorschaubilder nicht exportieren |
+| `--deduplicate` | inhaltsgleiche Dateien nur einmal schreiben |
+| `--types image,video` | nur diese Kategorien |
+| `--allow-cloud-output` | Ausgabe in einem Sync-Ordner erzwingen |
+
+### Prüfen
+
+```bash
+msgx verify --manifest "~/messenger-extract/export/threema"
+```
+
+Prüft Vorhandensein, Größe und SHA-256 jeder exportierten Datei sowie die
+Hardlinks. Das Backup wird dafür **nicht** gebraucht — die Prüfung läuft auch
+auf einer Kopie des Exports, Jahre später, auf einem anderen Rechner.
 
 ### Datenbankschemata ansehen
 
@@ -273,15 +342,20 @@ Liegt das venv in iCloud Drive? Siehe den Abschnitt oben.
    16 Byte ist, entschlüsselt ohne Fehler — nur zu weniger Daten. Deshalb wird
    die entschlüsselte Byteanzahl immer gegen die im Manifest vermerkte Größe
    geprüft und eine Abweichung gemeldet.
-5. Threema kann Teile seiner Daten zusätzlich app-eigen verschlüsseln. Ob und
+5. Core Data stellt jedem Blob ein Markierungsbyte voran (`0x01` für Inline-
+   Daten, `0x02` für eine Referenz auf `_EXTERNAL_DATA`). Es wird abgeschnitten;
+   ein unerwarteter Wert wird gemeldet statt blind entfernt. Beginnt ein Blob
+   nicht mit `0x01`, kann die betroffene Datei um ein Byte verschoben sein — das
+   steht dann als Hinweis im Bericht.
+6. Threema kann Teile seiner Daten zusätzlich app-eigen verschlüsseln. Ob und
    wie weit das eine Rolle spielt, ist erst nach der Analyse eines echten
    Backups beurteilbar und wird dann hier dokumentiert — nicht vorab versprochen.
-6. Threema kann seine interne Struktur zwischen Versionen ändern. Das Programm
+7. Threema kann seine interne Struktur zwischen Versionen ändern. Das Programm
    erkennt Strukturen dynamisch, kann bei unbekannten Strukturen aber nur einen
    Diagnosebericht liefern statt Ergebnisse.
-7. Sicheres Löschen des Passworts aus dem Python-Heap ist nicht garantierbar
+8. Sicheres Löschen des Passworts aus dem Python-Heap ist nicht garantierbar
    (siehe oben).
-8. Der Cloud-Sync-Guard erkennt die üblichen Ablagen anhand des Pfads. Einen
+9. Der Cloud-Sync-Guard erkennt die üblichen Ablagen anhand des Pfads. Einen
    beliebig konfigurierten Sync-Ordner kann er nicht kennen.
 
 Weitere Details: §17 des Design-Dokuments.
