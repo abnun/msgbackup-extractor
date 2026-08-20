@@ -254,10 +254,13 @@ def _render_app(out: _TextWriter, app: AppReport, *, verbose: bool) -> None:
             )
         if media.unreadable_payloads:
             out.field("Unlesbare Nutzdateien", format_count(media.unreadable_payloads))
-        if media.undetectable:
+        if media.undecryptable:
             out.field(
-                "Typ nicht bestimmbar (verschluesselt)", format_count(media.undetectable)
+                "Nicht entschluesselbar (Schluessel fehlt)",
+                format_count(media.undecryptable),
             )
+        if media.undetectable:
+            out.field("Typ nicht bestimmbar", format_count(media.undetectable))
 
     out.lines(
         "SQLite-Datenbanken",
@@ -428,6 +431,7 @@ def _app_to_dict(app: AppReport) -> dict[str, Any]:
             "inspected": app.media.inspected,
             "missing_payloads": app.media.missing_payloads,
             "unreadable_payloads": app.media.unreadable_payloads,
+            "undecryptable": app.media.undecryptable,
             "undetectable": app.media.undetectable,
         }
     return result

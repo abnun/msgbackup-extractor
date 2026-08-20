@@ -7,11 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from msgbackup_extractor.analysis import AnalysisBlocked, Analyzer
+from msgbackup_extractor.analysis import AnalysisBlocked, AnalysisReport, Analyzer
 from msgbackup_extractor.core import reports
-from msgbackup_extractor.core.backup import AppleBackup
 from msgbackup_extractor.models import DetectionStatus, MediaCategory
-from tests.conftest import PNG, THREEMA_BUNDLE_ID, sample_files
+from tests.conftest import (
+    PNG,
+    TEST_PASSWORD,
+    THREEMA_BUNDLE_ID,
+    analysis_session,
+    analyze,
+    sample_files,
+)
 from tests.support.backup_builder import (
     UNKNOWN_SCHEMA,
     BackupFile,
@@ -20,8 +26,9 @@ from tests.support.backup_builder import (
 )
 
 
-def _run(backup: BuiltBackup, **kwargs: object) -> object:
-    return Analyzer(AppleBackup(backup.path), **kwargs).run()  # type: ignore[arg-type]
+def _run(backup: BuiltBackup, **kwargs: object) -> AnalysisReport:
+    """Analyse ohne Passwort - bei verschluesselten Backups also ein Teilbericht."""
+    return analyze(backup, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +172,7 @@ def test_unknown_manifest_schema_blocks_with_diagnostics(tmp_path: Path) -> None
         tmp_path / "b", [], schema=UNKNOWN_SCHEMA, installed_applications=[THREEMA_BUNDLE_ID]
     )
     with pytest.raises(AnalysisBlocked) as error:
-        Analyzer(AppleBackup(backup.path)).run()
+        analyze(backup)
     assert "keine Dateitabelle" in str(error.value)
     assert "manifest_tables" in error.value.diagnostics
 
@@ -176,7 +183,7 @@ def test_ambiguous_detection_yields_warning_not_a_choice(tmp_path: Path) -> None
         [BackupFile("AppDomain-ch.threema.iapp", "Documents/a.png", PNG)],
         installed_applications=["ch.threema.iapp", "ch.threema.work.iapp"],
     )
-    report = Analyzer(AppleBackup(backup.path)).run()
+    report = analyze(backup)
     app = next(a for a in report.apps if a.profile_slug == "threema")
     assert app.detection.status is DetectionStatus.AMBIGUOUS
     assert app.domains == ()
@@ -190,7 +197,7 @@ def test_bundle_id_resolves_ambiguity(tmp_path: Path) -> None:
         [BackupFile("AppDomain-ch.threema.iapp", "Documents/a.png", PNG)],
         installed_applications=["ch.threema.iapp", "ch.threema.work.iapp"],
     )
-    report = Analyzer(AppleBackup(backup.path), bundle_id="ch.threema.iapp").run()
+    report = analyze(backup, bundle_id="ch.threema.iapp")
     app = next(a for a in report.apps if a.profile_slug == "threema")
     assert app.detection.status is DetectionStatus.CONFIRMED
     assert app.detection.bundle_id == "ch.threema.iapp"
@@ -204,17 +211,17 @@ def test_wrong_bundle_id_is_rejected(tmp_path: Path) -> None:
         installed_applications=["ch.threema.iapp", "ch.threema.work.iapp"],
     )
     with pytest.raises(AnalysisBlocked, match="passt zu keinem"):
-        Analyzer(AppleBackup(backup.path), bundle_id="ch.threema.gibt-es-nicht").run()
+        analyze(backup, bundle_id="ch.threema.gibt-es-nicht")
 
 
 def test_app_filter_reports_a_miss_explicitly(backup_without_threema: BuiltBackup) -> None:
-    report = Analyzer(AppleBackup(backup_without_threema.path), app_slug="threema").run()
+    report = analyze(backup_without_threema, app_slug="threema")
     app = report.apps[0]
     assert app.detection.status is DetectionStatus.NOT_FOUND
 
 
 def test_no_apps_reported_when_none_detected(backup_without_threema: BuiltBackup) -> None:
-    report = Analyzer(AppleBackup(backup_without_threema.path)).run()
+    report = analyze(backup_without_threema)
     assert report.apps == ()
 
 
@@ -225,7 +232,7 @@ def test_installed_app_without_domains_warns(tmp_path: Path) -> None:
         [BackupFile("HomeDomain", "Library/a.plist", b"bplist00")],
         installed_applications=[THREEMA_BUNDLE_ID],
     )
-    report = Analyzer(AppleBackup(backup.path)).run()
+    report = analyze(backup)
     assert any("keine der" in warning for warning in report.warnings)
 
 
@@ -280,7 +287,7 @@ def test_json_report_contains_no_key_material(plain_backup: BuiltBackup) -> None
         encrypt_manifest=False,
         installed_applications=[THREEMA_BUNDLE_ID],
     )
-    payload = reports.analysis_to_dict(Analyzer(AppleBackup(backup.path)).run())
+    payload = reports.analysis_to_dict(analyze(backup))
     text = reports.to_json(payload)
     assert "encryption_key" not in text
     assert "\\u0000" not in text
@@ -336,3 +343,97 @@ def test_format_count_uses_thousands_separator() -> None:
 def test_plural_forms() -> None:
     assert reports.plural(1, "Eintrag", "Eintraege") == "1 Eintrag"
     assert reports.plural(2, "Eintrag", "Eintraege") == "2 Eintraege"
+
+
+# ---------------------------------------------------------------------------
+# Verschluesselte Backups mit Passwort: vollstaendiger Bericht
+# ---------------------------------------------------------------------------
+
+
+def test_encrypted_backup_with_password_is_complete(encrypted_backup: BuiltBackup) -> None:
+    report = analyze(encrypted_backup, password=TEST_PASSWORD)
+    assert report.manifest_available
+    assert not report.is_partial
+    assert report.statistics is not None
+    assert report.statistics.total_entries == len(encrypted_backup.files)
+    assert report.statistics.encrypted_entries > 0
+
+
+def test_encrypted_and_plain_reports_agree(
+    plain_backup: BuiltBackup, encrypted_backup: BuiltBackup
+) -> None:
+    """Dasselbe Backup verschluesselt und unverschluesselt muss gleich aussehen.
+
+    Das ist der scharfe Test fuer die Entschluesselung: Kategorien, Formate und
+    Groessen muessen uebereinstimmen, obwohl der eine Lauf durch AES gehen musste.
+
+    Genau eine Datei weicht ab, und zwar begruendet: das Fixture enthaelt einen
+    Eintrag mit absichtlich unlesbarem MBFile-Blob. Ohne Blob gibt es keinen
+    Dateischluessel, also ist der Inhalt im verschluesselten Backup Chiffrat und
+    sein Typ nicht bestimmbar. Er wird als "nicht entschluesselbar" gezaehlt -
+    nicht geraten.
+    """
+    plain = analyze(plain_backup)
+    encrypted = analyze(encrypted_backup, password=TEST_PASSWORD)
+
+    plain_app = next(a for a in plain.apps if a.profile_slug == "threema")
+    encrypted_app = next(a for a in encrypted.apps if a.profile_slug == "threema")
+
+    assert encrypted_app.file_count == plain_app.file_count
+    assert encrypted_app.total_size == plain_app.total_size
+    assert encrypted_app.media is not None and plain_app.media is not None
+
+    # Die eine unbestimmbare Datei aus dem Vergleich herausrechnen.
+    assert encrypted_app.media.undecryptable == 1
+    assert encrypted_app.media.inspected == plain_app.media.inspected - 1
+
+    corrupted = plain_backup.file_by_path("Documents/kaputte-metadaten.jpg")
+    assert corrupted.corrupt_metadata, "Der Test haengt an diesem Fixture-Merkmal"
+
+    expected_counts = dict(plain_app.media.counts_per_category)
+    expected_counts["image"] -= 1
+    assert encrypted_app.media.counts_per_category == expected_counts
+
+    expected_formats = {
+        (f.format_name, f.count - 1 if f.format_name == "JPEG" else f.count)
+        for f in plain_app.media.formats
+    }
+    assert {
+        (f.format_name, f.count) for f in encrypted_app.media.formats
+    } == expected_formats
+    assert encrypted_app.media.extension_mismatches == plain_app.media.extension_mismatches
+
+
+def test_encrypted_databases_are_classified(encrypted_backup: BuiltBackup) -> None:
+    """Auch verschluesselte Datenbanken muessen klassifizierbar sein."""
+    with analysis_session(encrypted_backup, password=TEST_PASSWORD) as session:
+        report = Analyzer(session).run()
+        app = next(a for a in report.apps if a.profile_slug == "threema")
+        core_data = next(db for db in app.databases if db.basename == "ThreemaData.sqlite")
+        assert core_data.readable
+        assert core_data.role == "messages"
+        assert "Z_METADATA" in core_data.tables
+        # Die lesbare Kopie liegt im Arbeitsverzeichnis, nicht im Backup.
+        assert core_data.readable_path is not None
+        assert encrypted_backup.path not in core_data.readable_path.parents
+
+
+def test_media_detection_works_through_encryption(encrypted_backup: BuiltBackup) -> None:
+    report = analyze(encrypted_backup, password=TEST_PASSWORD)
+    media = next(a for a in report.apps if a.profile_slug == "threema").media
+    assert media is not None
+    assert {"JPEG", "PNG", "HEIC", "MP4", "M4A", "PDF"} <= {
+        fmt.format_name for fmt in media.formats
+    }
+    # Genau der Eintrag mit dem absichtlich kaputten MBFile-Blob.
+    assert media.undecryptable == 1
+
+
+def test_truncated_encrypted_file_is_counted_not_fatal(
+    encrypted_backup: BuiltBackup,
+) -> None:
+    """Die abgeschnittene Datei im Fixture darf den Lauf nicht abbrechen."""
+    report = analyze(encrypted_backup, password=TEST_PASSWORD)
+    app = next(a for a in report.apps if a.profile_slug == "threema")
+    assert app.file_count > 0
+    assert app.media is not None

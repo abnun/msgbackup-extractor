@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from msgbackup_extractor.analysis import Analyzer
 from msgbackup_extractor.cli import main
 from msgbackup_extractor.core.backup import AppleBackup
 from msgbackup_extractor.core.manifest import ManifestReader
+from tests.conftest import TEST_PASSWORD, analyze
 from tests.support.backup_builder import BuiltBackup
 
 Fingerprint = dict[str, tuple[int, str, int]]
@@ -74,20 +74,20 @@ def test_reading_the_manifest_creates_no_journal_files(plain_backup: BuiltBackup
 
 def test_full_analysis_changes_nothing(plain_backup: BuiltBackup) -> None:
     before = fingerprint(plain_backup.path)
-    Analyzer(AppleBackup(plain_backup.path)).run()
+    analyze(plain_backup)
     assert_unchanged(plain_backup.path, before)
 
 
 def test_analysis_of_encrypted_backup_changes_nothing(encrypted_backup: BuiltBackup) -> None:
     before = fingerprint(encrypted_backup.path)
-    Analyzer(AppleBackup(encrypted_backup.path)).run()
+    analyze(encrypted_backup)
     assert_unchanged(encrypted_backup.path, before)
 
 
 def test_reading_app_databases_creates_no_wal(plain_backup: BuiltBackup) -> None:
     """Der kritische Fall: SQLite legt sonst -wal/-shm neben die Datenbank."""
     before = fingerprint(plain_backup.path)
-    report = Analyzer(AppleBackup(plain_backup.path)).run()
+    report = analyze(plain_backup)
     assert any(db.readable for app in report.apps for db in app.databases), (
         "Der Test prueft nichts, wenn keine Datenbank gelesen wurde"
     )
@@ -152,3 +152,31 @@ def test_the_check_detects_a_touched_mtime(plain_backup: BuiltBackup) -> None:
     os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
     with pytest.raises(AssertionError, match="Veraenderte Dateien"):
         assert_unchanged(plain_backup.path, before)
+
+
+def test_full_analysis_of_encrypted_backup_with_password_changes_nothing(
+    encrypted_backup: BuiltBackup,
+) -> None:
+    """Der schaerfste Fall: Manifest und Datenbanken werden entschluesselt.
+
+    Alle Zwischenergebnisse muessen ausserhalb des Backups landen.
+    """
+    before = fingerprint(encrypted_backup.path)
+    report = analyze(encrypted_backup, password=TEST_PASSWORD)
+    assert report.manifest_available, "Der Test prueft nichts ohne gelesenes Manifest"
+    assert any(
+        db.readable for app in report.apps for db in app.databases
+    ), "Der Test prueft nichts ohne entschluesselte Datenbank"
+    assert_unchanged(encrypted_backup.path, before)
+
+
+def test_cli_analyze_of_encrypted_backup_changes_nothing(
+    encrypted_backup: BuiltBackup,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": TEST_PASSWORD)
+    before = fingerprint(encrypted_backup.path)
+    assert main(["analyze", "--backup", str(encrypted_backup.path), "--verbose"]) == 0
+    capsys.readouterr()
+    assert_unchanged(encrypted_backup.path, before)

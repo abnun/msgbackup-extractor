@@ -16,7 +16,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from msgbackup_extractor import __version__
-from msgbackup_extractor.analysis import AnalysisBlocked, Analyzer
+from msgbackup_extractor.analysis import AnalysisBlocked, AnalysisReport, Analyzer
 from msgbackup_extractor.apps.registry import profile_slugs
 from msgbackup_extractor.core import reports
 from msgbackup_extractor.core.backup import (
@@ -26,9 +26,11 @@ from msgbackup_extractor.core.backup import (
     default_backup_root,
     list_local_backups,
 )
+from msgbackup_extractor.core.encryption import DecryptionError, WrongPasswordError
 from msgbackup_extractor.core.logging_setup import configure_logging
 from msgbackup_extractor.core.manifest import ManifestSchemaError
 from msgbackup_extractor.core.paths import CloudSyncedPathError, require_non_cloud_path
+from msgbackup_extractor.core.session import BackupSession, interactive_password
 from msgbackup_extractor.core.sqlite_ro import (
     NotASQLiteDatabase,
     describe_database,
@@ -71,6 +73,19 @@ def _add_app_arguments(parser: argparse.ArgumentParser) -> None:
         "--bundle-id",
         metavar="ID",
         help="Loest eine mehrdeutige Erkennung auf, wenn mehrere Varianten gefunden wurden.",
+    )
+
+
+def _add_password_argument(parser: argparse.ArgumentParser) -> None:
+    """Es gibt bewusst nur einen Schalter, kein Passwort-Argument."""
+    parser.add_argument(
+        "--metadata-only",
+        action="store_true",
+        help=(
+            "Fragt bei einem verschluesselten Backup nicht nach dem Passwort. "
+            "Der Bericht beschraenkt sich dann auf die unverschluesselten "
+            "Metadaten aus Info.plist und Manifest.plist."
+        ),
     )
 
 
@@ -127,6 +142,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_backup_argument(analyze)
     _add_app_arguments(analyze)
+    _add_password_argument(analyze)
     _add_common_arguments(analyze)
     analyze.add_argument(
         "--no-media-inspection",
@@ -153,6 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_backup_argument(database)
     _add_app_arguments(database)
+    _add_password_argument(database)
     _add_common_arguments(database)
     database.set_defaults(handler=_command_database)
 
@@ -221,6 +238,21 @@ def _resolve_backup(arguments: argparse.Namespace) -> AppleBackup:
         raise SystemExit(EXIT_ERROR) from error
 
 
+def _open_session(
+    backup: AppleBackup, arguments: argparse.Namespace
+) -> BackupSession:
+    """Oeffnet eine Session und fragt das Passwort nur, wenn es gebraucht wird."""
+    metadata_only = getattr(arguments, "metadata_only", False)
+    provider = None if metadata_only else interactive_password
+    if backup.is_encrypted and not metadata_only:
+        print(
+            "Das Backup ist verschluesselt. Das Passwort wird nicht gespeichert "
+            "und erscheint in keiner Ausgabe.",
+            file=sys.stderr,
+        )
+    return BackupSession(backup, password_provider=provider)
+
+
 def _report_available_backups(root: Path | None = None) -> int:
     """Listet gefundene Backups auf. Rueckgabewert ist der Exitcode."""
     directory = root or default_backup_root()
@@ -276,30 +308,35 @@ def _command_backups(arguments: argparse.Namespace) -> int:
 
 def _command_analyze(arguments: argparse.Namespace) -> int:
     backup = _resolve_backup(arguments)
-    analyzer = Analyzer(
-        backup,
-        app_slug=arguments.app,
-        bundle_id=arguments.bundle_id,
-        inspect_media=not arguments.no_media_inspection,
-    )
     try:
-        report = analyzer.run()
-    except AnalysisBlocked as error:
-        print(reports.render_diagnostics_text(str(error), error.diagnostics), file=sys.stderr)
-        return EXIT_DIAGNOSTICS
-    except ManifestSchemaError as error:
-        print(reports.render_diagnostics_text(str(error), {}), file=sys.stderr)
+        with _open_session(backup, arguments) as session:
+            report = Analyzer(
+                session,
+                app_slug=arguments.app,
+                bundle_id=arguments.bundle_id,
+                inspect_media=not arguments.no_media_inspection,
+            ).run()
+            text = reports.render_analysis_text(report, verbose=arguments.verbose)
+            payload = reports.analysis_to_dict(
+                report, include_schema=arguments.include_schema
+            )
+    except WrongPasswordError as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    except DecryptionError as error:
+        print(f"Fehler bei der Entschluesselung: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    except (AnalysisBlocked, ManifestSchemaError) as error:
+        diagnostics = getattr(error, "diagnostics", {})
+        print(reports.render_diagnostics_text(str(error), diagnostics), file=sys.stderr)
         return EXIT_DIAGNOSTICS
 
-    text = reports.render_analysis_text(report, verbose=arguments.verbose)
-    payload = reports.analysis_to_dict(report, include_schema=arguments.include_schema)
     _emit(text, payload, arguments.json_path)
 
     if report.is_partial and report.backup.is_encrypted:
         print(
-            "\nHinweis: Das Backup ist verschluesselt. Die Entschluesselung wird "
-            "in der naechsten Ausbaustufe ergaenzt; bis dahin ist nur dieser "
-            "Teilbericht moeglich.",
+            "\nHinweis: Dies ist ein Teilbericht. Fuer die vollstaendige Analyse "
+            "das Backup-Passwort eingeben (also ohne --metadata-only aufrufen).",
             file=sys.stderr,
         )
     return EXIT_OK
@@ -307,18 +344,35 @@ def _command_analyze(arguments: argparse.Namespace) -> int:
 
 def _command_database(arguments: argparse.Namespace) -> int:
     backup = _resolve_backup(arguments)
-    analyzer = Analyzer(
-        backup,
-        app_slug=arguments.app,
-        bundle_id=arguments.bundle_id,
-        inspect_media=True,
-    )
     try:
-        report = analyzer.run()
-    except AnalysisBlocked as error:
-        print(reports.render_diagnostics_text(str(error), error.diagnostics), file=sys.stderr)
+        with _open_session(backup, arguments) as session:
+            report = Analyzer(
+                session,
+                app_slug=arguments.app,
+                bundle_id=arguments.bundle_id,
+                inspect_media=True,
+            ).run()
+            return _render_database_report(arguments, session, report)
+    except WrongPasswordError as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    except DecryptionError as error:
+        print(f"Fehler bei der Entschluesselung: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    except (AnalysisBlocked, ManifestSchemaError) as error:
+        diagnostics = getattr(error, "diagnostics", {})
+        print(reports.render_diagnostics_text(str(error), diagnostics), file=sys.stderr)
         return EXIT_DIAGNOSTICS
 
+
+def _render_database_report(
+    arguments: argparse.Namespace, session: BackupSession, report: AnalysisReport
+) -> int:
+    """Gibt die Schemata aus.
+
+    Die Session muss dabei noch offen sein: bei verschluesselten Backups zeigt
+    `readable_path` auf eine entschluesselte Kopie in ihrem Arbeitsverzeichnis.
+    """
     found = 0
     lines: list[str] = ["Datenbankschemata", "=" * len("Datenbankschemata"), ""]
     payload: dict[str, object] = {
@@ -342,9 +396,12 @@ def _command_database(arguments: argparse.Namespace) -> int:
                 continue
 
             tables: list[dict[str, object]] = []
-            path = backup.payload_path(database.file_id)
+            if database.readable_path is None:
+                lines.append("    Hinweis:   Kein lesbarer Pfad zur Datenbank")
+                lines.append("")
+                continue
             try:
-                with open_readonly(path) as connection:
+                with open_readonly(database.readable_path) as connection:
                     schemas = describe_database(connection)
             except NotASQLiteDatabase as error:
                 lines.append(f"    Hinweis:   {error}")

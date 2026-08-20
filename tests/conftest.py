@@ -5,11 +5,16 @@ Alle Backups hier sind synthetisch. Es werden nie echte private Daten geladen.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
+from msgbackup_extractor.analysis import AnalysisReport, Analyzer
+from msgbackup_extractor.core.backup import AppleBackup
+from msgbackup_extractor.core.session import BackupSession
 from tests.support.backup_builder import (
     BackupFile,
     BuiltBackup,
@@ -107,3 +112,37 @@ def backup_without_threema(tmp_path: Path) -> BuiltBackup:
         ],
         installed_applications=["com.apple.Maps"],
     )
+
+
+# ---------------------------------------------------------------------------
+# Analyse-Helfer
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def analysis_session(
+    backup: BuiltBackup, *, password: str | None = None
+) -> Iterator[BackupSession]:
+    """Oeffnet eine Session auf einem synthetischen Backup.
+
+    `password=None` bedeutet: nicht nach dem Passwort fragen. Bei einem
+    verschluesselten Backup entsteht dadurch der Teilzugriff - genau der Fall,
+    den der Teilbericht abdeckt.
+    """
+    provider = (lambda: password) if password is not None else None
+    with BackupSession(AppleBackup(backup.path), password_provider=provider) as session:
+        yield session
+
+
+def analyze(
+    backup: BuiltBackup, *, password: str | None = None, **kwargs: object
+) -> AnalysisReport:
+    """Fuehrt eine vollstaendige Analyse aus und gibt den Bericht zurueck.
+
+    Achtung: `DatabaseReport.readable_path` verweist bei verschluesselten
+    Backups auf eine Datei im Arbeitsverzeichnis der Session und ist nach der
+    Rueckgabe nicht mehr gueltig. Wer den Pfad braucht, nutzt
+    `analysis_session()` direkt.
+    """
+    with analysis_session(backup, password=password) as session:
+        return Analyzer(session, **kwargs).run()  # type: ignore[arg-type]

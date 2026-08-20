@@ -16,7 +16,7 @@ from msgbackup_extractor.cli import (
     build_parser,
     main,
 )
-from tests.conftest import THREEMA_BUNDLE_ID, sample_files
+from tests.conftest import TEST_PASSWORD, THREEMA_BUNDLE_ID, sample_files
 from tests.support.backup_builder import UNKNOWN_SCHEMA, BuiltBackup, build_backup
 
 # ---------------------------------------------------------------------------
@@ -112,13 +112,68 @@ def test_analyze_reports_go_to_stdout_and_logs_to_stderr(
     assert "Messenger Backup Analyzer" not in captured.err
 
 
-def test_analyze_of_encrypted_backup_explains_the_limit(
+def test_metadata_only_avoids_the_password_prompt(
     encrypted_backup: BuiltBackup, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["analyze", "--backup", str(encrypted_backup.path)]) == EXIT_OK
+    """--metadata-only darf nicht nach dem Passwort fragen."""
+    assert main([
+        "analyze", "--backup", str(encrypted_backup.path), "--metadata-only",
+    ]) == EXIT_OK
     captured = capsys.readouterr()
     assert "Eingeschraenkte Analyse" in captured.out
-    assert "verschluesselt" in captured.err
+    assert "Teilbericht" in captured.err
+    # Es darf keine Passwortabfrage stattgefunden haben.
+    assert "Passwort des verschluesselten Backups" not in captured.err
+
+
+def test_analyze_of_encrypted_backup_with_password(
+    encrypted_backup: BuiltBackup,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": TEST_PASSWORD)
+    assert main(["analyze", "--backup", str(encrypted_backup.path)]) == EXIT_OK
+    output = capsys.readouterr().out
+    assert "Eingeschraenkte Analyse" not in output
+    assert "Gefundene Formate" in output
+    assert "JPEG" in output
+
+
+def test_password_never_appears_in_any_output(
+    encrypted_backup: BuiltBackup,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Das Passwort darf in keinem Ausgabekanal auftauchen."""
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": TEST_PASSWORD)
+    main(["analyze", "--backup", str(encrypted_backup.path), "--verbose"])
+    captured = capsys.readouterr()
+    assert TEST_PASSWORD not in captured.out
+    assert TEST_PASSWORD not in captured.err
+
+
+def test_wrong_password_gives_a_clear_error(
+    encrypted_backup: BuiltBackup,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": "voellig-falsch")
+    assert main(["analyze", "--backup", str(encrypted_backup.path)]) == EXIT_ERROR
+    error_output = capsys.readouterr().err
+    assert "Passwort ist falsch" in error_output
+    # Die Meldung muss sagen, welches Passwort gemeint ist.
+    assert "Finder" in error_output
+
+
+def test_empty_password_is_rejected(
+    encrypted_backup: BuiltBackup,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": "")
+    with pytest.raises(ValueError, match="kein Passwort"):
+        main(["analyze", "--backup", str(encrypted_backup.path)])
+    capsys.readouterr()
 
 
 def test_analyze_with_app_filter(
@@ -206,11 +261,26 @@ def test_database_prints_no_row_contents(
     assert "platzhalter-" not in capsys.readouterr().out
 
 
-def test_database_on_encrypted_backup_reports_the_reason(
+def test_database_without_password_reports_the_reason(
     encrypted_backup: BuiltBackup, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["database", "--backup", str(encrypted_backup.path)]) == EXIT_ERROR
+    assert main([
+        "database", "--backup", str(encrypted_backup.path), "--metadata-only",
+    ]) == EXIT_ERROR
     assert "verschluesselt" in capsys.readouterr().err
+
+
+def test_database_of_encrypted_backup_with_password(
+    encrypted_backup: BuiltBackup,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Verschluesselte Datenbanken werden fuer den Schema-Dump entschluesselt."""
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": TEST_PASSWORD)
+    assert main(["database", "--backup", str(encrypted_backup.path)]) == EXIT_OK
+    output = capsys.readouterr().out
+    assert "ZMESSAGE" in output
+    assert "Z_PRIMARYKEY" in output
 
 
 # ---------------------------------------------------------------------------

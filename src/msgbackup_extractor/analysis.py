@@ -21,13 +21,18 @@ from pathlib import Path
 from msgbackup_extractor.apps.base import AppProfile, DatabaseCandidate, DatabaseRole
 from msgbackup_extractor.apps.registry import detect_all, get_profile
 from msgbackup_extractor.core import media as media_module
-from msgbackup_extractor.core.backup import AppleBackup
+from msgbackup_extractor.core.encryption import (
+    DecryptionError,
+    decrypt_file_to,
+    decrypt_head,
+)
 from msgbackup_extractor.core.logging_setup import get_logger
 from msgbackup_extractor.core.manifest import (
     ManifestReader,
     ManifestSchemaError,
     ManifestStatistics,
 )
+from msgbackup_extractor.core.session import BackupSession
 from msgbackup_extractor.core.sqlite_ro import (
     NotASQLiteDatabase,
     describe_database,
@@ -92,6 +97,10 @@ class DatabaseReport:
     confidence: str
     readable: bool
     note: str | None = None
+    #: Pfad, unter dem die Datenbank gelesen werden kann. Bei verschluesselten
+    #: Backups eine entschluesselte Kopie im Arbeitsverzeichnis der Session,
+    #: sonst die Datei im Backup. Nur solange die Session offen ist gueltig.
+    readable_path: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,10 +111,13 @@ class MediaSummary:
     size_per_category: dict[str, int]
     formats: tuple[FormatCount, ...]
     extension_mismatches: int
+    #: Typ nicht bestimmbar, obwohl die Datei lesbar war.
     undetectable: int
     inspected: int
     missing_payloads: int
     unreadable_payloads: int
+    #: Verschluesselte Dateien, fuer die kein Schluessel vorlag.
+    undecryptable: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,28 +171,32 @@ class Analyzer:
 
     def __init__(
         self,
-        backup: AppleBackup,
+        session: BackupSession,
         *,
-        manifest_db: Path | None = None,
         app_slug: str | None = None,
         bundle_id: str | None = None,
         inspect_media: bool = True,
     ) -> None:
         """
         Args:
-            manifest_db: Pfad zu einer bereits entschluesselten Manifest.db.
-                Ohne Angabe wird die Datei im Backup verwendet - das
-                funktioniert nur bei unverschluesselten Backups.
+            session: Eine geoeffnete Session. Sie entscheidet, ob das Manifest
+                lesbar ist und ob Schluessel fuer verschluesselte Nutzdaten
+                vorliegen.
             app_slug: Nur dieses Profil pruefen. Ohne Angabe alle.
             bundle_id: Loest eine mehrdeutige Erkennung auf.
             inspect_media: Wenn False, werden keine Nutzdateien gelesen. Der
                 Bericht enthaelt dann keine Formatstatistik.
         """
-        self.backup = backup
-        self.manifest_db = manifest_db or backup.manifest_db_path
+        self.session = session
+        self.backup = session.backup
         self.app_slug = app_slug
         self.bundle_id = bundle_id
         self.inspect_media = inspect_media
+
+    @property
+    def keys(self) -> object | None:
+        """Die Klassenschluessel der Session, falls vorhanden."""
+        return self.session.keys
 
     def run(self) -> AnalysisReport:
         info = self.backup.info()
@@ -193,8 +209,19 @@ class Analyzer:
             manifest_available=False,
         )
 
+        if not self.session.manifest.is_available:
+            report.manifest_unavailable_reason = self.session.manifest.unavailable_reason
+            if info.is_encrypted:
+                warnings.append(
+                    self.session.manifest.unavailable_reason
+                    or "Die Manifest.db konnte nicht gelesen werden."
+                )
+            report.apps = self._analyze_apps_metadata_only(info)
+            report.warnings = tuple(warnings)
+            return report
+
         try:
-            with ManifestReader(self.manifest_db) as reader:
+            with ManifestReader(self.session.manifest.path) as reader:
                 report.manifest_available = True
                 report.manifest_schema = reader.schemas
                 report.statistics = reader.statistics()
@@ -375,11 +402,52 @@ class Analyzer:
         except OSError as error:
             logger.debug("Nutzdatei %s nicht lesbar: %s", entry.file_id, type(error).__name__)
             return None, "unreadable"
-        if entry.is_encrypted:
-            # Verschluesselte Nutzdaten haben keine erkennbare Signatur; der Typ
-            # laesst sich erst nach der Entschluesselung bestimmen.
-            return None, "encrypted"
         return media_module.detect(header, filename=entry.relative_path), None
+
+    def _probe_encrypted(self, entry: ManifestEntry) -> tuple[MediaType | None, str | None]:
+        """Wie `_probe`, entschluesselt aber vorher den Dateianfang.
+
+        Bei AES-CBC genuegt der Anfang der Datei: ein Klartextblock haengt nur
+        vom eigenen und vom vorherigen Chiffratblock ab. Grosse Videos muessen
+        fuer die Typerkennung also nicht vollstaendig entschluesselt werden.
+        """
+        keys = self.session.keys
+        if keys is None or entry.encryption_key is None or entry.protection_class is None:
+            return None, "encrypted"
+
+        path = self.backup.payload_path(entry.file_id)
+        if not path.is_file():
+            return None, "missing"
+
+        try:
+            with keys.unwrap_file_key(entry.protection_class, entry.encryption_key) as key:
+                header = decrypt_head(path, key, _PROBE_SIZE)
+        except DecryptionError as error:
+            logger.debug(
+                "Nutzdatei %s nicht entschluesselbar: %s", entry.file_id, type(error).__name__
+            )
+            return None, "undecryptable"
+        except OSError:
+            return None, "unreadable"
+
+        if not header:
+            return None, "unreadable"
+        return media_module.detect(header, filename=entry.relative_path), None
+
+    def _inspect(self, entry: ManifestEntry) -> tuple[MediaType | None, str | None]:
+        """Bestimmt den Typ einer Datei, verschluesselt oder nicht.
+
+        Wichtig ist der dritte Fall: in einem verschluesselten Backup sind alle
+        Nutzdateien verschluesselt. Fehlt der Schluessel im Manifest-Eintrag -
+        etwa weil dessen MBFile-Blob unlesbar war -, dann ist der Inhalt
+        Chiffrat. Ihn wie Klartext zu untersuchen wuerde einen Typ *erfinden*.
+        Solche Eintraege gelten deshalb als nicht entschluesselbar.
+        """
+        if entry.is_encrypted:
+            return self._probe_encrypted(entry)
+        if self.backup.is_encrypted:
+            return None, "undecryptable"
+        return self._probe(entry)
 
     def _summarise_media(self, files: tuple[ManifestEntry, ...]) -> MediaSummary:
         counts: Counter[str] = Counter()
@@ -387,15 +455,18 @@ class Analyzer:
         format_counts: Counter[tuple[str, str | None, MediaCategory]] = Counter()
         format_sizes: Counter[tuple[str, str | None, MediaCategory]] = Counter()
         mismatches = undetectable = missing = unreadable = inspected = 0
+        undecryptable = 0
 
         for entry in files:
-            detected, reason = self._probe(entry)
+            detected, reason = self._inspect(entry)
             if detected is None:
                 match reason:
                     case "missing":
                         missing += 1
                     case "unreadable":
                         unreadable += 1
+                    case "undecryptable":
+                        undecryptable += 1
                     case _:
                         undetectable += 1
                 continue
@@ -430,9 +501,46 @@ class Analyzer:
             inspected=inspected,
             missing_payloads=missing,
             unreadable_payloads=unreadable,
+            undecryptable=undecryptable,
         )
 
     # -- Datenbanken --------------------------------------------------------
+
+    def _readable_database_path(
+        self, entry: ManifestEntry, source: Path
+    ) -> tuple[Path | None, str | None]:
+        """Liefert einen Pfad, unter dem die Datenbank lesbar ist.
+
+        Unverschluesselte Datenbanken werden direkt im Backup gelesen (nur
+        lesend). Verschluesselte werden in das Arbeitsverzeichnis der Session
+        entschluesselt - niemals in das Backup. SQLite braucht dafuer die
+        vollstaendige Datei; ein Teilstueck genuegt hier nicht.
+        """
+        if not entry.is_encrypted:
+            return source, None
+
+        keys = self.session.keys
+        if keys is None or entry.protection_class is None or entry.encryption_key is None:
+            return None, (
+                "Die Datenbank ist verschluesselt und es liegt kein Schluessel vor."
+            )
+
+        work_dir = self.session.ensure_work_dir()
+        destination = work_dir / f"db-{entry.file_id}.sqlite"
+        if destination.is_file():
+            return destination, None
+
+        try:
+            with keys.unwrap_file_key(entry.protection_class, entry.encryption_key) as key:
+                decrypt_file_to(source, destination, key, size=entry.size)
+        except DecryptionError as error:
+            destination.unlink(missing_ok=True)
+            return None, f"Die Datenbank ist nicht entschluesselbar: {error}"
+        except OSError as error:
+            destination.unlink(missing_ok=True)
+            return None, f"Die Datenbank ist nicht lesbar: {type(error).__name__}"
+
+        return destination, None
 
     def _analyze_databases(
         self, profile: AppProfile, files: tuple[ManifestEntry, ...]
@@ -440,20 +548,29 @@ class Analyzer:
         candidates: list[DatabaseCandidate] = []
         notes: dict[str, str] = {}
         readable: dict[str, bool] = {}
+        paths: dict[str, Path] = {}
 
         for entry in files:
             path = self.backup.payload_path(entry.file_id)
-            if not path.is_file() or entry.is_encrypted:
+            if not path.is_file():
                 continue
-            detected, _ = self._probe(entry)
+            detected, _ = self._inspect(entry)
             if detected is None or detected.category is not MediaCategory.DATABASE:
+                continue
+
+            readable_path, note = self._readable_database_path(entry, path)
+            if readable_path is None:
+                notes[entry.file_id] = note or "nicht lesbar"
+                readable[entry.file_id] = False
+                candidates.append(DatabaseCandidate(entry=entry, tables=()))
                 continue
 
             tables: tuple[str, ...] = ()
             try:
-                with open_readonly(path) as connection:
+                with open_readonly(readable_path) as connection:
                     tables = tuple(describe_database(connection, count_rows=False))
                 readable[entry.file_id] = True
+                paths[entry.file_id] = readable_path
             except NotASQLiteDatabase as error:
                 notes[entry.file_id] = str(error)
                 readable[entry.file_id] = False
@@ -474,6 +591,7 @@ class Analyzer:
                 confidence=role.confidence,
                 readable=readable.get(role.candidate.entry.file_id, False),
                 note=notes.get(role.candidate.entry.file_id),
+                readable_path=paths.get(role.candidate.entry.file_id),
             )
             for role in roles
         )
