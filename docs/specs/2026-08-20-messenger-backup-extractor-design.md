@@ -339,7 +339,7 @@ Abschlussbericht:
 ```
 Extraction completed
 
-Successful:        [Anzahl entfernt]
+Successful:         1.234
 Failed:                17
 Skipped:                0
 Undecryptable:          0
@@ -592,7 +592,7 @@ gebaute Artefakt, weil alles Weitere darauf aufbaut.
 
 ## 18. Phase 7: lokales UI (vorgemerkt)
 
-Nach der Extraktion soll der Export durchsehbar sein, ohne [Anzahl entfernt] Bilder im
+Nach der Extraktion soll der Export durchsehbar sein, ohne tausende Bilder im
 Finder zu scrollen. Anforderungen, soweit sie jetzt schon feststehen:
 
 **Datengrundlage.** Ausschließlich `export-manifest.json` und die exportierten
@@ -682,15 +682,15 @@ Beziehung nur auf einer Seite und muss empirisch geprüft werden. Gemessen:
 
 | Join | Treffer | Trägt |
 |---|---|---|
-| `ZMESSAGE.ZDATA` → `ZFILEDATA.Z_PK` | [Anzahl entfernt] / [Anzahl entfernt] | ja |
-| `ZMESSAGE.ZTHUMBNAIL` → `ZIMAGEDATA.Z_PK` | [Anzahl entfernt] / [Anzahl entfernt] | ja |
-| `ZMESSAGE.ZIMAGE` → `ZIMAGEDATA.Z_PK` | 9 / 9 | ja |
-| `ZMESSAGE.ZTHUMBNAIL1` → `ZIMAGEDATA.Z_PK` | 22 / 22 | ja |
-| `ZMESSAGE.ZTHUMBNAIL2` → `ZIMAGEDATA.Z_PK` | 1 / 1 | ja |
-| `ZMESSAGE.ZVIDEO` → `ZVIDEODATA.Z_PK` | 1 / 1 | ja |
-| `ZFILEDATA.ZMESSAGE` → `ZMESSAGE.Z_PK` | [Anzahl entfernt] / [Anzahl entfernt] | ja |
-| `ZIMAGEDATA.ZMESSAGE` → `ZMESSAGE.Z_PK` | **0 / [Anzahl entfernt]** | **nein** |
-| `ZMESSAGE.ZCONVERSATION` → `ZCONVERSATION.Z_PK` | [Anzahl entfernt] / [Anzahl entfernt] | ja |
+| `ZMESSAGE.ZDATA` → `ZFILEDATA.Z_PK` | alle | ja |
+| `ZMESSAGE.ZTHUMBNAIL` → `ZIMAGEDATA.Z_PK` | alle | ja |
+| `ZMESSAGE.ZIMAGE` → `ZIMAGEDATA.Z_PK` | alle | ja |
+| `ZMESSAGE.ZTHUMBNAIL1` → `ZIMAGEDATA.Z_PK` | alle | ja |
+| `ZMESSAGE.ZTHUMBNAIL2` → `ZIMAGEDATA.Z_PK` | alle | ja |
+| `ZMESSAGE.ZVIDEO` → `ZVIDEODATA.Z_PK` | alle | ja |
+| `ZFILEDATA.ZMESSAGE` → `ZMESSAGE.Z_PK` | alle | ja |
+| `ZIMAGEDATA.ZMESSAGE` → `ZMESSAGE.Z_PK` | **keiner** | **nein** |
+| `ZMESSAGE.ZCONVERSATION` → `ZCONVERSATION.Z_PK` | alle | ja |
 
 `ZIMAGEDATA.ZMESSAGE` ist vollständig verwaist. Wer dort joint, erhält null
 Treffer und hält die Chat-Zuordnung für unmöglich. Das Profil muss die Richtung
@@ -745,12 +745,13 @@ Am echten Backup ausgezählt: **jeder** Inline-Blob beginnt mit `0x01`, **jede**
 Referenz mit `0x02`. Ohne Abschneiden des `0x01`:
 
 * Jede aus der Datenbank exportierte Datei wäre um ein Byte verschoben, also
-  unbrauchbar — [Anzahl entfernt] davon JPEGs.
+  unbrauchbar — die große Mehrheit davon JPEGs.
 * Die Signaturerkennung greift nicht, weil die Magic Bytes an Offset 1 stehen.
-  Der Typ wird dann über den Dateinamen geraten, was 399 statt 179 Videos ergab.
+  Der Typ wird dann über den Dateinamen geraten, was mehr als doppelt so viele
+  angebliche Videos ergab, wie überhaupt vorhanden sind.
 
-Nach dem Abschneiden sind [Anzahl entfernt] der [Anzahl entfernt] Blobs per Signatur eindeutig ([Anzahl entfernt]
-JPEG, 18 PNG, 8 ISO-BMFF, 1 PDF, 1 GIF; 2 bleiben unbekannt).
+Nach dem Abschneiden sind nahezu alle Blobs per Signatur eindeutig — überwiegend
+JPEG, dazu PNG, ISO-BMFF, PDF und GIF; eine Handvoll bleibt unbekannt.
 
 Umsetzung: `MediaSource.byte_offset` trägt die Zahl der zu überspringenden
 Bytes, gesetzt vom App-Profil und angewendet in `extract/sources.py`. Ein
@@ -923,11 +924,11 @@ nicht zwei Implementierungen gibt.
 
 **Pfadpräfix.** `ZWAMEDIAITEM.ZMEDIALOCALPATH` nennt Pfade wie `Media/…`, die
 Dateien liegen aber unter `Message/Media/…`. Ohne Präfix löst **kein** Wert auf,
-mit `Message/` lösen [Anzahl entfernt] auf. Das Präfix wird deshalb zur Laufzeit
+mit `Message/` lösen nahezu alle auf. Das Präfix wird deshalb zur Laufzeit
 aus Kandidaten gemessen, nicht verdrahtet: WhatsApp könnte seine Ablage
 umstellen, und ein festes Präfix würde dann stillschweigend nichts mehr finden.
 
-**Vorschaubilder** stehen in `ZXMPPTHUMBPATH` ([Anzahl entfernt] auflösbar);
+**Vorschaubilder** stehen in `ZXMPPTHUMBPATH` (ebenfalls nahezu alle auflösbar);
 `ZTHUMBNAILLOCALPATH` ist nie gefüllt.
 
 **Beziehungsrichtung.** Beide tragen: `ZWAMEDIAITEM.ZMESSAGE` und
@@ -966,7 +967,7 @@ brauchte aber über zwei Minuten für WhatsApp. Ursache: die Datenbankerkennung
 las von **jeder** Datei im Backup mehrere Kilobyte, um den Medientyp zu
 bestimmen.
 
-Gemessen: [Anzahl entfernt] Byte je Datei kosten rund dreizehnmal so lange wie die 16 Byte
+Gemessen: 4.096 Byte je Datei kosten rund dreizehnmal so lange wie die 16 Byte
 der SQLite-Signatur. Die Datenbankerkennung braucht nur die Signatur. Nach der
 Umstellung dauerte der Lauf weniger als ein Drittel. Beide Lesewege laufen jetzt
 über eine Funktion (`_head(entry, length)`), damit es keine zwei Varianten gibt.
@@ -1046,7 +1047,7 @@ Gruppe, kürzere Seite):
 
 | | Vorschaubilder | Originale |
 |---|---|---|
-| Threema | Median **384 px**, 47/60 unter 400 | Median [Anzahl entfernt] px |
+| Threema | Median **384 px**, 47/60 unter 400 | Median 1.135 px |
 | WhatsApp | Median **73 px**, 60/60 unter 400 | Median 742 px |
 
 WhatsApps Vorschaubilder sind im Median 100 × 73 Pixel. Eine Kachel ist rund
@@ -1070,9 +1071,9 @@ Megabyte statt vier Kilobyte ist nötig, weil echte Fotos vor dem SOF-Segment
 einen EXIF-Block mit eingebettetem Vorschaubild von einigen zehn Kilobyte
 tragen; ein Test prüft genau diesen Fall.
 
-**Gegen `sips` geprüft:** [Anzahl entfernt] Stichproben exakt übereinstimmend.
+**Gegen `sips` geprüft:** alle Stichproben exakt übereinstimmend.
 
-**Wirkung.** Threema: [Anzahl entfernt] Kacheln hatten ein zu kleines
+**Wirkung.** Threema: ein großer Teil der Kacheln hatte ein zu kleines
 Vorschaubild. Nach der Umstellung, gemessen an einer 146-CSS-Pixel-Kachel bei
 doppelter Pixeldichte: 0 von 24 geprüften Kacheln noch hochskaliert.
 

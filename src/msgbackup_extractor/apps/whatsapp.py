@@ -16,9 +16,9 @@ Backup vermessen:
   `ZWAMESSAGE.ZMEDIAITEM` in jedem einzelnen Fall. Anders als bei Threema, wo eine
   Seite vollstaendig verwaist ist - weshalb die Richtung trotzdem gemessen und
   nicht angenommen wird.
-* Chatnamen stehen in `ZWACHATSESSION.ZPARTNERNAME` (alle 569 gefuellt);
+* Chatnamen stehen in `ZWACHATSESSION.ZPARTNERNAME` (durchweg gefuellt);
   `ZSESSIONTYPE = 1` kennzeichnet Gruppen.
-* Zeitstempel zaehlen ab 2001 (Core Data), [Anzahl entfernt] plausibel.
+* Zeitstempel zaehlen ab 2001 (Core Data), durchweg plausibel.
 
 **Datenschutzhinweis:** Die Medienpfade enthalten Telefonnummern und Gruppen-IDs
 als Verzeichnisnamen. Sie gehen deshalb nicht in Logausgaben und nicht in das
