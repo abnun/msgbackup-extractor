@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "msgbackup-extractor"
+version = "0.1.0"
+description = "Lokaler Extractor fuer Messenger-Daten aus Apple-iPhone-Backups (macOS)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "Mark Mueller" }]
+keywords = ["ios", "backup", "forensics", "threema", "whatsapp", "signal", "offline"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: System :: Archiving :: Backup",
+]
+
+# Genau eine Runtime-Dependency. Siehe docs/specs/*-design.md Paragraph 13.
+# cryptography liefert PBKDF2, AES-CBC und AES-KeyWrap (RFC 3394).
+# Keine eigene Kryptografie, keine Netzwerkfunktionalitaet.
+dependencies = [
+    "cryptography>=42,<46",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+]
+
+[project.scripts]
+msgx = "msgbackup_extractor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: Tests mit groesseren synthetischen Backups",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src"]
