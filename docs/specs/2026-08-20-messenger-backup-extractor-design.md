@@ -565,6 +565,7 @@ gebaute Artefakt, weil alles Weitere darauf aufbaut.
 | 4 | `extract` + `verify`: `planner`, `runner`, `--dry-run`, `--deduplicate`, Export-Manifest, Integrität, Tests | — |
 | 5 | `database`-Subcommand + `--organize-by-chat` auf Basis des real vorgefundenen Schemas | — |
 | 6 | README vollständig + zweites App-Profil (WhatsApp oder Signal) zur Validierung des Interfaces | — |
+| 7 | Lokales UI zum Durchsehen des Exports (siehe §18) | — |
 
 ---
 
@@ -585,3 +586,112 @@ gebaute Artefakt, weil alles Weitere darauf aufbaut.
    Diagnosebericht liefern statt Ergebnisse.
 6. Der Zugriff auf `~/Library/Application Support/MobileSync/Backup/` erfordert
    für das Terminal die Berechtigung „Festplattenvollzugriff".
+
+
+---
+
+## 18. Phase 7: lokales UI (vorgemerkt)
+
+Nach der Extraktion soll der Export durchsehbar sein, ohne [Anzahl entfernt] Bilder im
+Finder zu scrollen. Anforderungen, soweit sie jetzt schon feststehen:
+
+**Datengrundlage.** Ausschließlich `export-manifest.json` und die exportierten
+Dateien. Das UI liest die Threema-Datenbank nicht erneut — deshalb trägt das
+Manifest bereits Chat, Zeitstempel, Originaldateiname, Medientyp und die
+Zuordnung Vorschau ↔ Original.
+
+**Vorschaubilder.** Die aus dem Backup übernommenen Thumbnails (Ø 58 KB) werden
+direkt verwendet. Es wird keine Bildbibliothek eingebunden, um Vorschauen zu
+erzeugen — das wäre eine zusätzliche Dependency ohne Not.
+
+**Sicherheitsmodell.** Es gilt unverändert: keine Netzwerkverbindungen, kein
+CDN, keine externen Fonts, keine Telemetrie. Das UI läuft entweder als eine
+einzelne, in sich geschlossene HTML-Datei im Export oder über einen lokalen
+Server, der ausschließlich an `127.0.0.1` bindet und nur aus dem
+Ausgabeverzeichnis liest. Beides ist offline vollständig funktionsfähig.
+
+**Offene Entscheidungen.** Einzeldatei-HTML gegen lokalen Server; ob
+Nachrichtentexte überhaupt angezeigt werden (bisher werden sie nicht
+exportiert); Umfang der Suche und Filter. Wird entschieden, wenn Phase 4 und 5
+stehen und der Export in seiner endgültigen Form vorliegt.
+
+---
+
+## 19. Nachtrag: Erkenntnisse aus dem echten Backup (2026-08-20)
+
+Die Analyse eines echten Backups (iPhone, iOS, unverschlüsselt, [Menge entfernt],
+Threema `ch.threema.iapp` Version [Version entfernt]) hat die folgenden Punkte belegt. Sie
+sind die Grundlage für Phase 4 und 5 und ersetzen dort jede Annahme.
+
+### 19.1 Ablage der Threema-Daten
+
+```
+AppDomainGroup-group.ch.threema/
+├── ThreemaData.sqlite                      [Menge entfernt], 26 Tabellen, Core Data
+└── .ThreemaData_SUPPORT/_EXTERNAL_DATA/    [Anzahl entfernt] Dateien, [Menge entfernt], UUID-Namen
+```
+
+`ThreemaData.sqlite` ist ein lesbarer Core-Data-Store, **nicht** app-eigen
+verschlüsselt. Zusätzlich vorhanden: `AppDomain-ch.threema.iapp` (28 Dateien,
+App-Interna) und zwei Plugin-Domains für Notification- und Share-Extension.
+
+### 19.2 Referenzformat externer Blobs
+
+Eine `ZDATA`-Spalte enthält entweder die Daten selbst oder eine Referenz auf
+`_EXTERNAL_DATA`. Die Referenz ist genau 38 Byte:
+
+```
+0x02 | 36 Byte UUID als ASCII (Großbuchstaben) | 0x00
+```
+
+Verifiziert: [Anzahl entfernt] Referenzen lösen auf eine vorhandene Datei auf.
+Unterscheidungskriterium ist damit `len(blob) == 38 and blob[0] == 0x02`.
+
+### 19.3 Richtung der Beziehungen
+
+Core Data deklariert **keine** SQL-Fremdschlüssel; die Richtung liegt je
+Beziehung nur auf einer Seite und muss empirisch geprüft werden. Gemessen:
+
+| Join | Treffer | Trägt |
+|---|---|---|
+| `ZMESSAGE.ZDATA` → `ZFILEDATA.Z_PK` | [Anzahl entfernt] / [Anzahl entfernt] | ja |
+| `ZMESSAGE.ZTHUMBNAIL` → `ZIMAGEDATA.Z_PK` | [Anzahl entfernt] / [Anzahl entfernt] | ja |
+| `ZMESSAGE.ZIMAGE` → `ZIMAGEDATA.Z_PK` | 9 / 9 | ja |
+| `ZMESSAGE.ZTHUMBNAIL1` → `ZIMAGEDATA.Z_PK` | 22 / 22 | ja |
+| `ZMESSAGE.ZTHUMBNAIL2` → `ZIMAGEDATA.Z_PK` | 1 / 1 | ja |
+| `ZMESSAGE.ZVIDEO` → `ZVIDEODATA.Z_PK` | 1 / 1 | ja |
+| `ZFILEDATA.ZMESSAGE` → `ZMESSAGE.Z_PK` | [Anzahl entfernt] / [Anzahl entfernt] | ja |
+| `ZIMAGEDATA.ZMESSAGE` → `ZMESSAGE.Z_PK` | **0 / [Anzahl entfernt]** | **nein** |
+| `ZMESSAGE.ZCONVERSATION` → `ZCONVERSATION.Z_PK` | [Anzahl entfernt] / [Anzahl entfernt] | ja |
+
+`ZIMAGEDATA.ZMESSAGE` ist vollständig verwaist. Wer dort joint, erhält null
+Treffer und hält die Chat-Zuordnung für unmöglich. Das Profil muss die Richtung
+jeder Beziehung zur Laufzeit prüfen und die tragende verwenden.
+
+### 19.4 Zwei Quellen für Mediendaten
+
+Ein Extractor, der nur Dateien aus `_EXTERNAL_DATA` kopiert, verliert
+Originalmedien **stillschweigend**:
+
+| Quelle | Anzahl | Größe |
+|---|---|---|
+| Externe Blob-Dateien | [Anzahl entfernt] | [Menge entfernt] |
+| Inline-Originale (nur in der DB) | 714 | [Menge entfernt] |
+| Inline-Thumbnails (nur in der DB) | [Anzahl entfernt] | [Menge entfernt] |
+
+Beide Quellen laufen durch dieselbe SHA-256-Integritätsprüfung; bei
+Inline-Blobs ist der Datenbankwert die Quelle statt einer Datei.
+
+### 19.5 Verfügbare Metadaten
+
+`ZMESSAGE` liefert `ZFILENAME` (Originaldateiname), `ZMIMETYPE`, `ZDATE`.
+`ZCONVERSATION` liefert `ZGROUPNAME` für Gruppen und `ZCONTACT` für
+Einzelchats. Gemessene Abdeckung: [Anzahl entfernt] externen Dateien sind einem
+Chat belegbar zuordenbar, 277 nicht (→ `unassigned/`). 36 Konversationen,
+davon 12 Gruppen; 84 Kontakte.
+
+### 19.6 Nicht zu exportierende Dateien
+
+Im Threema-Container liegen App-Interna, die keine Nutzdaten sind: 12 PLIST,
+2 LOG sowie `observations.db` und `tips-store.db` (Apple-Frameworks). Sie gehen
+nach `metadata/` bzw. `databases/`, nicht in die Medienverzeichnisse.

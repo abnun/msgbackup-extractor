@@ -13,8 +13,11 @@ gebaut, WhatsApp und Signal sind vorgesehen.
 > | `analyze` | fertig, auch für verschlüsselte Backups |
 > | `database` | fertig, auch für verschlüsselte Backups |
 > | `backups` | fertig |
-> | `extract` | noch nicht implementiert |
-> | `verify` | noch nicht implementiert |
+> | `extract` | in Arbeit |
+> | `verify` | in Arbeit |
+>
+> Danach vorgesehen: Chat-Zuordnung (`--organize-by-chat`), ein zweites
+> App-Profil (WhatsApp/Signal) und ein lokales UI zum Durchsehen des Exports.
 >
 > Die Extraktion wird gebaut, sobald die Analyse gegen ein echtes Backup
 > geprüft ist — damit sie sich an der tatsächlich vorgefundenen Struktur
