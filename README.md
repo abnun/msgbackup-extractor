@@ -161,6 +161,13 @@ Aufbau:
   Bereich, „Alle im Filter auswählen" für den gerade aktiven Filter. Die Auswahl
   wird nach Pfad gehalten und übersteht einen Filterwechsel.
 
+Die **Sammelleiste** am unteren Rand erscheint, sobald es etwas zu tun gibt —
+also bei bestehender Auswahl *oder* sobald ein Filter greift. Sie nennt den
+aktiven Filter („Videos · 2023"), damit klar ist, worauf sich „Alle im Filter
+auswählen (42)" bezieht. Ohne Auswahl sind „Auswahl aufheben" und „Auswahl
+übernehmen" ausgegraut. „Filter zurücksetzen" in der Seitenleiste lässt die
+Auswahl unangetastet — das sind zwei verschiedene Absichten.
+
 Zwei Entscheidungen, die dort bewusst so sind:
 
 **Vorschaubilder sind keine eigenen Einträge.** Sie sind die Kachel ihres

@@ -822,6 +822,18 @@ verspricht und nichts liefert, wäre schlechter als kein Knopf.
   Sonst verliert man beim Wechsel des Chats die halbe Auswahl, ohne es zu
   merken.
 * Leertaste wählt in der Einzelansicht aus.
+* Die Sammelleiste ist sichtbar, sobald es etwas zu tun gibt: bei bestehender
+  Auswahl **oder** sobald ein Filter greift. Im ersten Entwurf war sie nur bei
+  bestehender Auswahl sichtbar — und genau darin steckte der Knopf, mit dem man
+  eine Auswahl anlegt. Ein Henne-Ei-Problem: „Alle im Filter auswählen" war
+  unerreichbar, bevor man von Hand eine Kachel angeklickt hatte.
+* Die Leiste nennt den aktiven Filter („Videos · 2023"). Ohne diese Angabe wäre
+  der Knopf eine Zumutung: er täte je nach unsichtbarem Zustand etwas völlig
+  anderes.
+* Aktionen, die eine Auswahl brauchen, sind ohne Auswahl deaktiviert statt
+  versteckt — so bleibt sichtbar, was möglich wäre.
+* „Filter zurücksetzen" lässt die Auswahl unangetastet. Es sind zwei
+  verschiedene Absichten und zwei verschiedene Knöpfe.
 
 ### 22.3 `msgx collect`
 

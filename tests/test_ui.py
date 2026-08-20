@@ -369,3 +369,39 @@ def test_selection_survives_a_filter_change(export_dir: Path) -> None:
     html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
     assert "const selected = new Set()" in html
     assert "selected.has(it.p)" in html
+
+
+def test_tray_appears_when_a_filter_is_set(export_dir: Path) -> None:
+    """Ohne das waere "Alle im Filter auswaehlen" unerreichbar.
+
+    Die Sammelleiste war zuerst nur bei bestehender Auswahl sichtbar - und
+    genau darin steckte der Knopf, mit dem man eine Auswahl anlegt.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "function filterActive()" in html
+    assert "chosen.length === 0 && !active" in html
+
+
+def test_tray_names_the_active_filter(export_dir: Path) -> None:
+    """Der Knopf tut je nach Filter etwas anderes - das muss dranstehen."""
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert 'id="tray-filter"' in html
+    assert "function filterLabel()" in html
+
+
+def test_actions_needing_a_selection_are_disabled_without_one(
+    export_dir: Path,
+) -> None:
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert 'document.getElementById("tray-clear").disabled = chosen.length === 0' in html
+    assert 'document.getElementById("tray-hand").disabled = chosen.length === 0' in html
+
+
+def test_resetting_filters_keeps_the_selection(export_dir: Path) -> None:
+    """Filter zuruecksetzen darf nicht die Auswahl loeschen.
+
+    Beides sind eigene Knoepfe; wer den einen drueckt, will nicht das andere.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    # Der Reset fasst nur die Filterknoepfe in der Seitenleiste an.
+    assert 'document.querySelectorAll(\'aside [aria-pressed="true"]\')' in html

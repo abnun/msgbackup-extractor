@@ -267,6 +267,17 @@ kbd {
   background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
 }
 .tray button.primary:hover { color: #fff; filter: brightness(1.08); }
+.tray button:disabled {
+  opacity: .42; cursor: default; border-color: var(--line); color: inherit;
+}
+.tray button:disabled:hover { border-color: var(--line); color: inherit; filter: none; }
+.tray .filter {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 12px; font-weight: 600;
+  max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 main { padding-bottom: 80px; }
 
 dialog#hand {
@@ -348,6 +359,7 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
 <div class="tray" id="tray" hidden>
   <span class="count" id="tray-count"></span>
   <span class="sub" id="tray-size"></span>
+  <span class="filter" id="tray-filter" hidden></span>
   <span class="spacer"></span>
   <button type="button" id="tray-all"></button>
   <button type="button" id="tray-clear">Auswahl aufheben</button>
@@ -511,6 +523,27 @@ const DATA = /*__INDEX__*/;
   const selected = new Set();
   let anchor = -1;   // fuer Auswahl mit gedrueckter Umschalttaste
 
+  function filterActive() {
+    return Boolean(
+      state.kinds.size || state.years.size || state.chats.size ||
+      state.flags.size || state.q.trim()
+    );
+  }
+
+  // Kurzbeschreibung der aktiven Filter, damit die Leiste sagt, worauf sich
+  // "Alle im Filter auswaehlen" bezieht. Ohne das waere der Knopf eine
+  // Zumutung: er wuerde je nach unsichtbarem Zustand etwas voellig anderes tun.
+  function filterLabel() {
+    const parts = [];
+    for (const k of state.kinds) parts.push(KIND_LABEL[k] || k);
+    for (const y of [...state.years].sort((a, b) => b - a)) parts.push(String(y));
+    for (const c of state.chats) parts.push(chats[c]);
+    for (const f of state.flags) parts.push(FLAGS[f].label);
+    const q = state.q.trim();
+    if (q) parts.push(`Suche „${q}“`);
+    return parts.join(" · ");
+  }
+
   function apply() {
     const q = state.q.trim().toLowerCase();
     filtered = items.filter((it) => {
@@ -523,6 +556,7 @@ const DATA = /*__INDEX__*/;
     });
     renderStatus();
     renderResults();
+    renderTray();
   }
 
   /* --- Filterleiste ----------------------------------------------------- */
@@ -586,7 +620,8 @@ const DATA = /*__INDEX__*/;
     state.kinds.clear(); state.years.clear(); state.chats.clear(); state.flags.clear();
     state.q = "";
     document.getElementById("search").value = "";
-    document.querySelectorAll('[aria-pressed="true"]')
+    // Nur die Filterknoepfe zuruecksetzen - die Auswahl der Kacheln bleibt.
+    document.querySelectorAll('aside [aria-pressed="true"]')
       .forEach((b) => b.setAttribute("aria-pressed", "false"));
     apply();
   });
@@ -734,20 +769,44 @@ const DATA = /*__INDEX__*/;
   function renderTray() {
     const tray = document.getElementById("tray");
     const chosen = selectedItems();
-    tray.hidden = chosen.length === 0;
-    if (!chosen.length) return;
+    const active = filterActive();
 
-    document.getElementById("tray-count").textContent =
-      `${num(chosen.length)} ausgewählt`;
-    document.getElementById("tray-size").textContent =
-      size(chosen.reduce((a, it) => a + (it.s || 0), 0));
+    // Sichtbar, sobald es etwas zu tun gibt: eine Auswahl ODER ein Filter.
+    // Waere sie nur bei bestehender Auswahl sichtbar, waere der Knopf "Alle im
+    // Filter auswaehlen" unerreichbar, bevor man von Hand etwas angeklickt hat.
+    tray.hidden = chosen.length === 0 && !active;
+    if (tray.hidden) return;
+
+    const label = document.getElementById("tray-filter");
+    if (active) {
+      label.hidden = false;
+      label.textContent = filterLabel();
+      label.title = filterLabel();
+    } else {
+      label.hidden = true;
+    }
+
+    const count = document.getElementById("tray-count");
+    const sub = document.getElementById("tray-size");
+    if (chosen.length) {
+      count.textContent = `${num(chosen.length)} ausgewählt`;
+      sub.textContent = size(chosen.reduce((a, it) => a + (it.s || 0), 0));
+    } else {
+      count.textContent = `${num(filtered.length)} im Filter`;
+      sub.textContent =
+        `${size(filtered.reduce((a, it) => a + (it.s || 0), 0))} · nichts ausgewählt`;
+    }
 
     const allInFilter = filtered.length > 0 && filtered.every((it) => selected.has(it.p));
-    const button = document.getElementById("tray-all");
-    button.textContent = allInFilter
+    const all = document.getElementById("tray-all");
+    all.disabled = filtered.length === 0;
+    all.textContent = allInFilter
       ? `Auswahl im Filter aufheben (${num(filtered.length)})`
       : `Alle im Filter auswählen (${num(filtered.length)})`;
-    button.dataset.mode = allInFilter ? "clear" : "add";
+    all.dataset.mode = allInFilter ? "clear" : "add";
+
+    document.getElementById("tray-clear").disabled = chosen.length === 0;
+    document.getElementById("tray-hand").disabled = chosen.length === 0;
   }
 
   document.getElementById("tray-all").addEventListener("click", (e) => {
