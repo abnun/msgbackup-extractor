@@ -78,7 +78,7 @@ def detect_cloud_provider(path: Path, *, home: Path | None = None) -> str | None
         candidate = (home / marker).resolve() if (home / marker).exists() else home / marker
         if resolved == candidate or candidate in resolved.parents:
             return provider
-        # Anbieter wie OneDrive haengen Firmennamen an: "OneDrive - Musterfirma"
+        # Anbieter wie OneDrive haengen den Firmennamen an: "OneDrive - Musterfirma"
         for parent in (resolved, *resolved.parents):
             if parent.parent == home and parent.name.startswith(marker):
                 return provider
