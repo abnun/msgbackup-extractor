@@ -1,0 +1,65 @@
+name: Publish the landing page
+
+# Publishes website/ through GitHub Pages. Nothing is built or fetched: the
+# folder is already the finished site, self-contained by design, so the job
+# only uploads it. Action versions are pinned by commit hash rather than tag,
+# because a tag can be moved.
+
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/pages.yml", "website/**"]
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Refuse to publish a page that phones home
+        run: |
+          # The privacy notice promises no third-party request. That promise is
+          # checked here rather than trusted: any absolute URL in a loading
+          # attribute (src, href on a stylesheet, a font, an image) fails the
+          # build. Ordinary outbound links in href are fine and expected.
+          if grep -rnoE '(src|srcset)="https?://' website/ ; then
+            echo "::error::A resource is loaded from a third party."
+            exit 1
+          fi
+          if grep -rnoE '<link[^>]+href="https?://' website/ | grep -v 'rel="canonical"' ; then
+            echo "::error::A stylesheet, font or preload points at a third party."
+            exit 1
+          fi
+          if grep -rnoE '@import|fonts\.googleapis|fonts\.gstatic|cdn\.' website/ ; then
+            echo "::error::An external stylesheet or CDN reference is present."
+            exit 1
+          fi
+          echo "No third-party resource found."
+
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: website/
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
