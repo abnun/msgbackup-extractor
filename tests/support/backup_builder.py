@@ -125,7 +125,9 @@ def _tlv(tag: str, value: bytes | int) -> bytes:
     return tag.encode("ascii") + struct.pack(">I", len(payload)) + payload
 
 
-def derive_passcode_key(password: str, salt: bytes, iterations: int, dpsl: bytes, dpic: int) -> bytes:
+def derive_passcode_key(
+    password: str, salt: bytes, iterations: int, dpsl: bytes, dpic: int
+) -> bytes:
     """Doppeltes PBKDF2 wie bei Keybag-Version >= 3.
 
     inner = PBKDF2-HMAC-SHA1  (password, DPSL, DPIC, 32)
@@ -251,7 +253,9 @@ def build_mbfile_blob(entry: BackupFile, encryption_key: bytes | None) -> bytes:
         objects.append({"NS.data": encryption_key, "$class": plistlib.UID(0)})
         encryption_key_uid = plistlib.UID(len(objects) - 1)
 
-    objects.append({"$classes": ["NSMutableData", "NSData", "NSObject"], "$classname": "NSMutableData"})
+    objects.append(
+        {"$classes": ["NSMutableData", "NSData", "NSObject"], "$classname": "NSMutableData"}
+    )
     nsdata_class_uid = plistlib.UID(len(objects) - 1)
     if encryption_key_uid is not None:
         objects[encryption_key_uid.data]["$class"] = nsdata_class_uid  # type: ignore[index]
@@ -344,7 +348,19 @@ def _write_manifest_db(
         connection.execute(
             "INSERT INTO Properties (key, value) VALUES (?, ?)", ("salt", b"\x00" * 8)
         )
-        if "CREATE TABLE Files" in schema:
+        # Nur einfuegen, wenn die Tabelle die erwarteten Spalten hat. Fixtures
+        # mit abweichendem oder unvollstaendigem Schema werden absichtlich leer
+        # angelegt - genau daran wird die Schema-Introspektion geprueft.
+        if entries:
+            available = {
+                row[1] for row in connection.execute("PRAGMA table_info(Files)")
+            }
+            required = {"fileID", "domain", "relativePath", "flags", "file"}
+            if not required <= available:
+                raise ValueError(
+                    f"Das Schema hat nicht die Spalten {sorted(required - available)}; "
+                    "solche Fixtures muessen ohne Eintraege gebaut werden."
+                )
             connection.executemany(
                 "INSERT INTO Files (fileID, domain, relativePath, flags, file) "
                 "VALUES (?, ?, ?, ?, ?)",
@@ -526,3 +542,59 @@ def build_backup(
         files=tuple(files),
         expected_hashes=expected_hashes,
     )
+
+
+# ---------------------------------------------------------------------------
+# Realistische App-Datenbanken
+# ---------------------------------------------------------------------------
+
+
+def core_data_database(*, entities: tuple[str, ...] = ("ZCONVERSATION", "ZMESSAGE", "ZCONTACT"),
+                       rows: int = 3) -> bytes:
+    """Erzeugt einen minimalen, echten Core-Data-Store als Bytes.
+
+    Core Data laesst sich strukturell nachweisen: jeder Store enthaelt die
+    Verwaltungstabellen `Z_METADATA` und `Z_PRIMARYKEY`, Entitaeten tragen das
+    Praefix `Z`. Genau darauf prueft der Produktionscode - deshalb muss das
+    Fixture diese Struktur wirklich haben und nicht nur so heissen.
+
+    Die Inhalte sind Platzhalter ohne personenbezogene Bedeutung.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "store.sqlite"
+        connection = sqlite3.connect(path)
+        try:
+            connection.execute("PRAGMA journal_mode=DELETE")
+            connection.execute(
+                "CREATE TABLE Z_METADATA (Z_VERSION INTEGER PRIMARY KEY, "
+                "Z_UUID VARCHAR(255), Z_PLIST BLOB)"
+            )
+            connection.execute(
+                "INSERT INTO Z_METADATA VALUES (1, '00000000-0000-0000-0000-000000000000', NULL)"
+            )
+            connection.execute(
+                "CREATE TABLE Z_PRIMARYKEY (Z_ENT INTEGER PRIMARY KEY, Z_NAME VARCHAR, "
+                "Z_SUPER INTEGER, Z_MAX INTEGER)"
+            )
+            for index, entity in enumerate(entities, start=1):
+                connection.execute(
+                    "INSERT INTO Z_PRIMARYKEY VALUES (?, ?, 0, ?)",
+                    (index, entity.removeprefix("Z").title(), rows),
+                )
+                connection.execute(
+                    f"CREATE TABLE {entity} ("
+                    "Z_PK INTEGER PRIMARY KEY, Z_ENT INTEGER, Z_OPT INTEGER, "
+                    "ZDATE TIMESTAMP, ZIDENTIFIER VARCHAR)"
+                )
+                for row in range(1, rows + 1):
+                    connection.execute(
+                        f"INSERT INTO {entity} (Z_PK, Z_ENT, Z_OPT, ZDATE, ZIDENTIFIER) "
+                        "VALUES (?, ?, 1, 0, ?)",
+                        (row, index, f"platzhalter-{row}"),
+                    )
+            connection.commit()
+        finally:
+            connection.close()
+        return path.read_bytes()

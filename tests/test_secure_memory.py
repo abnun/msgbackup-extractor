@@ -24,7 +24,7 @@ def test_length_is_available_without_revealing() -> None:
 
 def test_repr_str_and_format_never_leak_the_value() -> None:
     secret = SecretBytes(SECRET)
-    for rendering in (repr(secret), str(secret), f"{secret}", f"{secret!s}", "{}".format(secret)):
+    for rendering in (repr(secret), str(secret), f"{secret}", f"{secret!s}", f"{secret}"):
         assert SECRET.decode() not in rendering
         assert REDACTED in rendering
 
@@ -50,7 +50,7 @@ def test_wipe_zeroes_the_underlying_buffer() -> None:
     """Der Puffer wird tatsaechlich ueberschrieben, nicht nur dereferenziert."""
     buffer = bytearray(SECRET)
     secret = SecretBytes(buffer)
-    inner = secret._buffer  # noqa: SLF001 - gezielte Pruefung der Implementierung
+    inner = secret._buffer
     assert inner is not None
     secret.wipe()
     assert bytes(inner) == b""
@@ -109,6 +109,5 @@ def test_transient_password_uses_getpass_only(monkeypatch: pytest.MonkeyPatch) -
 
 def test_transient_password_rejects_empty_input(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("getpass.getpass", lambda prompt="": "")
-    with pytest.raises(ValueError, match="kein Passwort"):
-        with transient_password():
-            pass
+    with pytest.raises(ValueError, match="kein Passwort"), transient_password():
+        pass

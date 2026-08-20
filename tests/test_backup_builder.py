@@ -25,7 +25,6 @@ from tests.support.backup_builder import (
     derive_passcode_key,
 )
 
-
 # ---------------------------------------------------------------------------
 # Keybag-Parsing (hier bewusst dupliziert, um den Fixture-Generator unabhaengig
 # vom Produktionscode zu pruefen)
@@ -148,7 +147,7 @@ def test_corrupt_metadata_blob_is_not_a_valid_plist(plain_backup: BuiltBackup) -
         blob = connection.execute(
             "SELECT file FROM Files WHERE fileID = ?", (entry.file_id,)
         ).fetchone()[0]
-    with pytest.raises(Exception):
+    with pytest.raises(plistlib.InvalidFileException):
         plistlib.loads(blob)
 
 

@@ -93,7 +93,9 @@ class SecretBytes:
         self.wipe()
 
     def __del__(self) -> None:
-        try:
+        # Bewusst try/except statt contextlib.suppress: beim Interpreter-Shutdown
+        # koennen Modulglobals bereits abgebaut sein.
+        try:  # noqa: SIM105
             self.wipe()
         except Exception:  # pragma: no cover - Interpreter-Shutdown
             pass

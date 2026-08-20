@@ -45,7 +45,7 @@ def hash_chunks(chunks: Iterable[bytes]) -> str:
     return digest.hexdigest()
 
 
-def tee_hash(chunks: Iterable[bytes]) -> tuple[Iterator[bytes], "_Digest"]:
+def tee_hash(chunks: Iterable[bytes]) -> tuple[Iterator[bytes], _Digest]:
     """Laesst Bloecke durch und hasht sie im Vorbeigehen.
 
     So wird der Quellhash beim Schreiben gebildet, ohne die Daten ein zweites
@@ -65,7 +65,7 @@ def tee_hash(chunks: Iterable[bytes]) -> tuple[Iterator[bytes], "_Digest"]:
 class _Digest:
     """Veraenderlicher Hash-Akkumulator fuer `tee_hash`."""
 
-    __slots__ = ("_digest", "_bytes")
+    __slots__ = ("_bytes", "_digest")
 
     def __init__(self) -> None:
         self._digest = hashlib.sha256()

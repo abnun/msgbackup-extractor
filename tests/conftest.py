@@ -10,7 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from tests.support.backup_builder import BackupFile, BuiltBackup, build_backup
+from tests.support.backup_builder import (
+    BackupFile,
+    BuiltBackup,
+    build_backup,
+    core_data_database,
+)
 
 #: Realistische Datei-Signaturen fuer die Medienerkennung.
 JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
@@ -41,7 +46,10 @@ def sample_files() -> list[BackupFile]:
         BackupFile(THREEMA_APP_DOMAIN, "Documents/video/clip.mp4", MP4 + b"D" * 900),
         BackupFile(THREEMA_APP_DOMAIN, "Documents/audio/voice.m4a", M4A + b"E" * 200),
         BackupFile(THREEMA_APP_DOMAIN, "Documents/docs/handbuch.pdf", PDF + b"F" * 250),
-        BackupFile(THREEMA_APP_DOMAIN, "Documents/ThreemaData.sqlite", SQLITE + b"G" * 600),
+        # Echter Core-Data-Store, damit die Datenbankklassifikation getestet wird.
+        BackupFile(THREEMA_APP_DOMAIN, "Documents/ThreemaData.sqlite", core_data_database()),
+        # SQLite-Signatur ohne gueltigen Inhalt - muss als unlesbar gemeldet werden.
+        BackupFile(THREEMA_APP_DOMAIN, "Documents/kaputt.sqlite", SQLITE + b"G" * 600),
         BackupFile(THREEMA_GROUP_DOMAIN, "Library/Shared/shared.jpg", JPEG + b"H" * 150),
         # Endung widerspricht dem Inhalt - muss als Mismatch erkannt werden.
         BackupFile(THREEMA_APP_DOMAIN, "Documents/img/getarnt.txt", PNG + b"I" * 100),
@@ -59,7 +67,9 @@ def sample_files() -> list[BackupFile]:
         # Fremde App - darf nicht als Threema gelten.
         BackupFile("AppDomain-com.apple.Maps", "Documents/karte.png", PNG + b"M" * 60),
         # Systemdomain.
-        BackupFile("HomeDomain", "Library/Preferences/com.apple.test.plist", b"bplist00" + b"N" * 40),
+        BackupFile(
+            "HomeDomain", "Library/Preferences/com.apple.test.plist", b"bplist00" + b"N" * 40
+        ),
     ]
 
 

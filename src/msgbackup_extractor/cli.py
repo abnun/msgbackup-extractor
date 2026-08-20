@@ -1,0 +1,467 @@
+"""Kommandozeilenschnittstelle.
+
+Enthaelt bewusst keine Businesslogik: die Unterbefehle validieren Argumente,
+rufen die zustaendigen Module und geben Berichte aus. Berichte gehen nach
+stdout, Logmeldungen nach stderr - so bleibt `--json` umleitbar.
+
+Passwoerter werden ausschliesslich interaktiv erfragt. Es gibt bewusst kein
+Argument dafuer.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from collections.abc import Sequence
+from pathlib import Path
+
+from msgbackup_extractor import __version__
+from msgbackup_extractor.analysis import AnalysisBlocked, Analyzer
+from msgbackup_extractor.apps.registry import profile_slugs
+from msgbackup_extractor.core import reports
+from msgbackup_extractor.core.backup import (
+    AppleBackup,
+    BackupAccessError,
+    NotABackupError,
+    default_backup_root,
+    list_local_backups,
+)
+from msgbackup_extractor.core.logging_setup import configure_logging
+from msgbackup_extractor.core.manifest import ManifestSchemaError
+from msgbackup_extractor.core.paths import CloudSyncedPathError, require_non_cloud_path
+from msgbackup_extractor.core.sqlite_ro import (
+    NotASQLiteDatabase,
+    describe_database,
+    open_readonly,
+)
+
+PROGRAM = "msgx"
+
+EXIT_OK = 0
+EXIT_USAGE = 2
+EXIT_ERROR = 3
+EXIT_DIAGNOSTICS = 4
+EXIT_NOT_IMPLEMENTED = 5
+
+
+# ---------------------------------------------------------------------------
+# Argumentparser
+# ---------------------------------------------------------------------------
+
+
+def _add_backup_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--backup",
+        type=Path,
+        metavar="PFAD",
+        help=(
+            "Verzeichnis des Backups (das mit der Geraete-ID). Ohne Angabe "
+            "werden die Backups am Standardort aufgelistet."
+        ),
+    )
+
+
+def _add_app_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--app",
+        choices=profile_slugs(),
+        help="Nur diesen Messenger pruefen. Ohne Angabe werden alle geprueft.",
+    )
+    parser.add_argument(
+        "--bundle-id",
+        metavar="ID",
+        help="Loest eine mehrdeutige Erkennung auf, wenn mehrere Varianten gefunden wurden.",
+    )
+
+
+def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help=(
+            "Technische Zusatzinformationen. Gibt auch dann keine "
+            "Nachrichteninhalte aus."
+        ),
+    )
+    parser.add_argument(
+        "--show-paths",
+        action="store_true",
+        help=(
+            "Zeigt Dateipfade im Klartext an. Standardmaessig werden sie "
+            "maskiert, weil sie Kontakt- und Chatnamen enthalten koennen."
+        ),
+    )
+    parser.add_argument(
+        "--json",
+        type=Path,
+        metavar="PFAD",
+        dest="json_path",
+        help="Schreibt den Bericht zusaetzlich als JSON in diese Datei.",
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=PROGRAM,
+        description=(
+            "Extrahiert Messenger-Daten aus einem lokalen Apple-iPhone-Backup. "
+            "Arbeitet ausschliesslich lokal und liest das Backup nur."
+        ),
+        epilog=(
+            "Das Backup wird niemals veraendert. Geschrieben wird ausschliesslich "
+            "in das mit --output angegebene Verzeichnis."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--version", action="version", version=f"{PROGRAM} {__version__}")
+
+    subparsers = parser.add_subparsers(dest="command", metavar="BEFEHL")
+
+    analyze = subparsers.add_parser(
+        "analyze",
+        help="Backup analysieren (read-only, extrahiert nichts)",
+        description=(
+            "Untersucht das Backup und berichtet, was vorhanden ist. Es werden "
+            "keine Dateien geschrieben und keine Daten extrahiert."
+        ),
+    )
+    _add_backup_argument(analyze)
+    _add_app_arguments(analyze)
+    _add_common_arguments(analyze)
+    analyze.add_argument(
+        "--no-media-inspection",
+        action="store_true",
+        help=(
+            "Liest keine Nutzdateien. Schneller, aber ohne Formatstatistik "
+            "(die Typerkennung braucht die Dateikoepfe)."
+        ),
+    )
+    analyze.add_argument(
+        "--include-schema",
+        action="store_true",
+        help="Nimmt das vollstaendige Manifest-Schema in den JSON-Bericht auf.",
+    )
+    analyze.set_defaults(handler=_command_analyze)
+
+    database = subparsers.add_parser(
+        "database",
+        help="Schemata der gefundenen App-Datenbanken ausgeben",
+        description=(
+            "Oeffnet die gefundenen SQLite-Datenbanken strikt lesend und gibt "
+            "deren Schema aus. Es werden keine Inhalte ausgegeben."
+        ),
+    )
+    _add_backup_argument(database)
+    _add_app_arguments(database)
+    _add_common_arguments(database)
+    database.set_defaults(handler=_command_database)
+
+    backups = subparsers.add_parser(
+        "backups",
+        help="Lokale Backups am Standardort auflisten",
+    )
+    backups.add_argument(
+        "--root",
+        type=Path,
+        metavar="PFAD",
+        help="Anderes Wurzelverzeichnis als der Standardort.",
+    )
+    backups.set_defaults(handler=_command_backups)
+
+    extract = subparsers.add_parser(
+        "extract",
+        help="Dateien extrahieren (noch nicht implementiert)",
+    )
+    _add_backup_argument(extract)
+    _add_app_arguments(extract)
+    _add_common_arguments(extract)
+    extract.add_argument("--output", type=Path, metavar="PFAD", help="Ausgabeverzeichnis.")
+    extract.add_argument("--dry-run", action="store_true", help="Schreibt nichts.")
+    extract.add_argument(
+        "--organize-by-chat", action="store_true", help="Medien nach Chat gruppieren."
+    )
+    extract.add_argument("--deduplicate", action="store_true", help="Duplikate nur einmal ablegen.")
+    extract.add_argument(
+        "--allow-cloud-output",
+        action="store_true",
+        help=(
+            "Erlaubt ein Ausgabeverzeichnis in einem Cloud-Sync-Ordner. "
+            "Die Daten werden dann vom Betriebssystem hochgeladen."
+        ),
+    )
+    extract.set_defaults(handler=_command_extract)
+
+    verify = subparsers.add_parser(
+        "verify",
+        help="Export anhand seines Manifests pruefen (noch nicht implementiert)",
+    )
+    verify.add_argument("--manifest", type=Path, metavar="PFAD", help="export-manifest.json")
+    verify.add_argument("--verbose", action="store_true")
+    verify.set_defaults(handler=_command_verify)
+
+    return parser
+
+
+# ---------------------------------------------------------------------------
+# Hilfen
+# ---------------------------------------------------------------------------
+
+
+def _resolve_backup(arguments: argparse.Namespace) -> AppleBackup:
+    """Oeffnet das Backup oder erklaert, wie es zu finden ist."""
+    if arguments.backup is None:
+        raise SystemExit(_report_available_backups())
+
+    path = arguments.backup.expanduser()
+    try:
+        require_non_cloud_path(path, purpose="Backup-Verzeichnis", allow=True)
+        return AppleBackup(path)
+    except (NotABackupError, BackupAccessError) as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        raise SystemExit(EXIT_ERROR) from error
+
+
+def _report_available_backups(root: Path | None = None) -> int:
+    """Listet gefundene Backups auf. Rueckgabewert ist der Exitcode."""
+    directory = root or default_backup_root()
+    try:
+        found = list_local_backups(directory)
+    except BackupAccessError as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if not found:
+        print(f"Keine Backups gefunden unter:\n    {directory}", file=sys.stderr)
+        print(
+            "\nEin lokales Backup erstellst du im Finder: iPhone anschliessen, "
+            "in der Seitenleiste auswaehlen, \n"
+            '"Sichere alle Daten des iPhone auf diesem Mac" aktivieren, '
+            "Verschluesselung einschalten,\ndann \"Jetzt sichern\".",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    print("Gefundene Backups (neueste zuerst):\n")
+    for path in found:
+        try:
+            backup = AppleBackup(path)
+            device = backup.device_info()
+            label = device.device_name or "unbekanntes Geraet"
+            encrypted = "verschluesselt" if backup.is_encrypted else "unverschluesselt"
+            print(f"    {path.name}")
+            print(f"        {label}, iOS {device.product_version or '?'}, {encrypted}")
+        except (NotABackupError, BackupAccessError):
+            print(f"    {path.name}\n        (nicht lesbar)")
+    print("\nVerwende den Pfad mit --backup.")
+    return EXIT_OK
+
+
+def _emit(text: str, payload: dict[str, object] | None, json_path: Path | None) -> None:
+    """Gibt den Bericht aus und schreibt optional JSON."""
+    print(text)
+    if json_path is not None and payload is not None:
+        target = json_path.expanduser()
+        reports.write_json(payload, target)
+        print(f"JSON-Bericht geschrieben: {target}", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
+# Unterbefehle
+# ---------------------------------------------------------------------------
+
+
+def _command_backups(arguments: argparse.Namespace) -> int:
+    return _report_available_backups(arguments.root)
+
+
+def _command_analyze(arguments: argparse.Namespace) -> int:
+    backup = _resolve_backup(arguments)
+    analyzer = Analyzer(
+        backup,
+        app_slug=arguments.app,
+        bundle_id=arguments.bundle_id,
+        inspect_media=not arguments.no_media_inspection,
+    )
+    try:
+        report = analyzer.run()
+    except AnalysisBlocked as error:
+        print(reports.render_diagnostics_text(str(error), error.diagnostics), file=sys.stderr)
+        return EXIT_DIAGNOSTICS
+    except ManifestSchemaError as error:
+        print(reports.render_diagnostics_text(str(error), {}), file=sys.stderr)
+        return EXIT_DIAGNOSTICS
+
+    text = reports.render_analysis_text(report, verbose=arguments.verbose)
+    payload = reports.analysis_to_dict(report, include_schema=arguments.include_schema)
+    _emit(text, payload, arguments.json_path)
+
+    if report.is_partial and report.backup.is_encrypted:
+        print(
+            "\nHinweis: Das Backup ist verschluesselt. Die Entschluesselung wird "
+            "in der naechsten Ausbaustufe ergaenzt; bis dahin ist nur dieser "
+            "Teilbericht moeglich.",
+            file=sys.stderr,
+        )
+    return EXIT_OK
+
+
+def _command_database(arguments: argparse.Namespace) -> int:
+    backup = _resolve_backup(arguments)
+    analyzer = Analyzer(
+        backup,
+        app_slug=arguments.app,
+        bundle_id=arguments.bundle_id,
+        inspect_media=True,
+    )
+    try:
+        report = analyzer.run()
+    except AnalysisBlocked as error:
+        print(reports.render_diagnostics_text(str(error), error.diagnostics), file=sys.stderr)
+        return EXIT_DIAGNOSTICS
+
+    found = 0
+    lines: list[str] = ["Datenbankschemata", "=" * len("Datenbankschemata"), ""]
+    payload: dict[str, object] = {
+        "tool": "msgbackup-extractor",
+        "report_type": "database-schema",
+        "databases": [],
+    }
+    schema_list: list[dict[str, object]] = []
+
+    for app in report.apps:
+        for database in app.databases:
+            found += 1
+            lines.append(f"{app.profile_name}: {database.basename}")
+            lines.append(f"    Domain:    {database.domain}")
+            lines.append(f"    Groesse:   {reports.format_size(database.size)}")
+            lines.append(f"    Rolle:     {database.role} [{database.confidence}]")
+            lines.append(f"    Grundlage: {database.role_reason}")
+            if not database.readable:
+                lines.append(f"    Hinweis:   {database.note or 'nicht lesbar'}")
+                lines.append("")
+                continue
+
+            tables: list[dict[str, object]] = []
+            path = backup.payload_path(database.file_id)
+            try:
+                with open_readonly(path) as connection:
+                    schemas = describe_database(connection)
+            except NotASQLiteDatabase as error:
+                lines.append(f"    Hinweis:   {error}")
+                lines.append("")
+                continue
+
+            lines.append("")
+            for name, schema in sorted(schemas.items()):
+                rows = (
+                    reports.plural(schema.row_count, "Zeile", "Zeilen")
+                    if schema.row_count is not None
+                    else "Zeilenzahl unbekannt"
+                )
+                lines.append(f"    Tabelle {name}  ({rows})")
+                for column in schema.columns:
+                    kind = schema.column_types.get(column) or "?"
+                    marker = " PK" if column in schema.primary_key else ""
+                    lines.append(f"        {column:<32} {kind}{marker}")
+                for source, target, target_column in schema.foreign_keys:
+                    lines.append(f"        FK {source} -> {target}.{target_column}")
+                lines.append("")
+                tables.append(
+                    {
+                        "name": name,
+                        "columns": list(schema.columns),
+                        "column_types": schema.column_types,
+                        "primary_key": list(schema.primary_key),
+                        "foreign_keys": [list(fk) for fk in schema.foreign_keys],
+                        "row_count": schema.row_count,
+                    }
+                )
+
+            schema_list.append(
+                {
+                    "app": app.profile_slug,
+                    "basename": database.basename,
+                    "domain": database.domain,
+                    "role": database.role,
+                    "confidence": database.confidence,
+                    "tables": tables,
+                }
+            )
+
+    if not found:
+        print("Es wurden keine lesbaren App-Datenbanken im Backup gefunden.", file=sys.stderr)
+        if report.is_partial:
+            print(
+                "Das Backup ist verschluesselt und konnte nicht geoeffnet werden.",
+                file=sys.stderr,
+            )
+        return EXIT_ERROR
+
+    payload["databases"] = schema_list
+    _emit("\n".join(lines), payload, arguments.json_path)
+    return EXIT_OK
+
+
+def _command_extract(arguments: argparse.Namespace) -> int:
+    if arguments.output is not None:
+        try:
+            require_non_cloud_path(
+                arguments.output.expanduser(),
+                purpose="Ausgabeverzeichnis",
+                allow=arguments.allow_cloud_output,
+            )
+        except CloudSyncedPathError as error:
+            print(f"Fehler: {error}", file=sys.stderr)
+            return EXIT_ERROR
+
+    print(
+        "Die Extraktion ist noch nicht implementiert.\n\n"
+        "Fertig sind: analyze, database, backups. Die Extraktion folgt, sobald "
+        "die Analyse\ngegen ein echtes Backup geprueft wurde - so wird sie gegen "
+        "die tatsaechlich\nvorgefundene Struktur gebaut und nicht gegen Annahmen.",
+        file=sys.stderr,
+    )
+    return EXIT_NOT_IMPLEMENTED
+
+
+def _command_verify(arguments: argparse.Namespace) -> int:
+    print(
+        "Die Pruefung ist noch nicht implementiert; sie setzt ein "
+        "export-manifest.json voraus,\ndas erst die Extraktion erzeugt.",
+        file=sys.stderr,
+    )
+    return EXIT_NOT_IMPLEMENTED
+
+
+# ---------------------------------------------------------------------------
+# Einstiegspunkt
+# ---------------------------------------------------------------------------
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    arguments = parser.parse_args(argv)
+
+    if getattr(arguments, "command", None) is None:
+        parser.print_help()
+        return EXIT_USAGE
+
+    configure_logging(
+        verbose=getattr(arguments, "verbose", False),
+        show_paths=getattr(arguments, "show_paths", False),
+    )
+
+    try:
+        return int(arguments.handler(arguments))
+    except SystemExit as error:
+        return int(error.code or EXIT_OK)
+    except KeyboardInterrupt:
+        print("\nAbgebrochen.", file=sys.stderr)
+        return EXIT_ERROR
+    except CloudSyncedPathError as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
