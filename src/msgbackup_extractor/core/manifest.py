@@ -41,7 +41,19 @@ REQUIRED_COLUMNS: Final = ("fileID", "domain", "relativePath")
 OPTIONAL_COLUMNS: Final = ("flags", "file")
 
 #: Bezugszeitpunkt der MBFile-Zeitstempel.
+#:
+#: Am echten Backup verifiziert: [Anzahl entfernt] Werten ergeben mit der
+#: Unix-Epoche ein plausibles Datum, mit der Apple-Epoche (2001) kein einziges -
+#: dort landen sie 31 Jahre in der Zukunft. MBFile und Core Data verwenden
+#: also unterschiedliche Bezugszeitpunkte; Core-Data-Zeitstempel (ZDATE) zaehlen
+#: ab 2001 und werden im jeweiligen App-Profil umgerechnet.
+MBFILE_EPOCH: Final = datetime(1970, 1, 1, tzinfo=UTC)
+
+#: Bezugszeitpunkt von Core-Data-Zeitstempeln, hier nur zur Abgrenzung.
 APPLE_EPOCH: Final = datetime(2001, 1, 1, tzinfo=UTC)
+
+#: Frueheste plausible Zeit - vor dem ersten iPhone gab es keine iOS-Backups.
+EARLIEST_PLAUSIBLE: Final = datetime(2007, 1, 1, tzinfo=UTC)
 
 #: Laenge eines `EncryptionKey`-Blobs: 4 Byte Protection Class + 40 Byte Wrapped Key.
 ENCRYPTION_KEY_BLOB_LENGTH: Final = 44
@@ -63,21 +75,33 @@ class ManifestSchemaError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
-def _apple_timestamp(value: Any) -> datetime | None:
+def mbfile_timestamp(value: Any, *, now: datetime | None = None) -> datetime | None:
     """Wandelt einen MBFile-Zeitstempel in ein `datetime`, oder None.
 
-    Zeitstempel koennen 0, negativ oder unsinnig gross sein. Ein unplausibler
-    Wert wird zu None - eine erfundene Zeit waere schlimmer als keine.
+    Zeitstempel koennen 0, negativ oder unsinnig sein. Unplausible Werte werden
+    zu None - eine erfundene Zeit waere schlimmer als keine.
+
+    Die Obergrenze ist absichtlich "jetzt" (mit einem Tag Spielraum fuer
+    Uhrenabweichungen) und nicht irgendein fernes Jahr: eine Datei kann nicht in
+    der Zukunft geaendert worden sein. Genau diese Pruefung deckt eine
+    verwechselte Epoche sofort auf, statt sie 31 Jahre spaeter sichtbar werden
+    zu lassen.
+
+    Args:
+        now: Bezugszeit fuer die Obergrenze. Nur fuer Tests zu setzen.
     """
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         return None
     if value <= 0:
         return None
     try:
-        stamp = APPLE_EPOCH + timedelta(seconds=float(value))
+        stamp = MBFILE_EPOCH + timedelta(seconds=float(value))
     except (OverflowError, ValueError, OSError):
         return None
-    if not (datetime(2001, 1, 1, tzinfo=UTC) <= stamp <= datetime(2100, 1, 1, tzinfo=UTC)):
+
+    upper = (now or datetime.now(UTC)) + timedelta(days=1)
+    if not (EARLIEST_PLAUSIBLE <= stamp <= upper):
+        logger.debug("Unplausibler MBFile-Zeitstempel verworfen: %s", stamp.isoformat())
         return None
     return stamp
 
@@ -160,9 +184,9 @@ def decode_mbfile(blob: bytes | None) -> MBFile:
         inode=_int("InodeNumber"),
         flags=_int("Flags"),
         relative_path=relative_path if isinstance(relative_path, str) else None,
-        birth=_apple_timestamp(root.get("Birth")),
-        last_modified=_apple_timestamp(root.get("LastModified")),
-        last_status_change=_apple_timestamp(root.get("LastStatusChange")),
+        birth=mbfile_timestamp(root.get("Birth")),
+        last_modified=mbfile_timestamp(root.get("LastModified")),
+        last_status_change=mbfile_timestamp(root.get("LastStatusChange")),
     )
 
 

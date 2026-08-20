@@ -220,13 +220,18 @@ def wrapped_key_blob(protection_class: int, class_key: bytes, file_key: bytes) -
 # ---------------------------------------------------------------------------
 
 
-def _apple_epoch(value: datetime | None) -> int:
-    """Sekunden seit 2001-01-01, wie in MBFile-Zeitstempeln."""
+def _mbfile_epoch(value: datetime | None) -> int:
+    """Sekunden seit 1970-01-01, wie in MBFile-Zeitstempeln.
+
+    Am echten Backup verifiziert: MBFile verwendet die Unix-Epoche, Core Data
+    dagegen 2001. Ein Fixture mit der falschen Epoche wuerde den Fehler
+    verdecken, statt ihn zu finden.
+    """
     if value is None:
         return 0
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
-    reference = datetime(2001, 1, 1, tzinfo=UTC)
+    reference = datetime(1970, 1, 1, tzinfo=UTC)
     return int((value.astimezone(UTC) - reference).total_seconds())
 
 
@@ -274,9 +279,9 @@ def build_mbfile_blob(entry: BackupFile, encryption_key: bytes | None) -> bytes:
             "UserID": 501,
             "GroupID": 501,
             "InodeNumber": 100000 + (int(entry.file_id[:6], 16) % 900000),
-            "Birth": _apple_epoch(entry.birth or entry.last_modified),
-            "LastModified": _apple_epoch(entry.last_modified),
-            "LastStatusChange": _apple_epoch(entry.last_modified),
+            "Birth": _mbfile_epoch(entry.birth or entry.last_modified),
+            "LastModified": _mbfile_epoch(entry.last_modified),
+            "LastStatusChange": _mbfile_epoch(entry.last_modified),
         }
     )
     if encryption_key_uid is not None:

@@ -255,11 +255,17 @@ def external_reference_name(blob: bytes | memoryview) -> str:
     return bytes(blob)[1:-1].decode("ascii")
 
 
-def _apple_datetime(value: object) -> datetime | None:
+def _apple_datetime(value: object, *, now: datetime | None = None) -> datetime | None:
     """Core-Data-Zeitstempel (Sekunden seit 2001) in ein `datetime`.
 
-    Unplausible Werte werden zu None. Eine erfundene Zeit waere schlimmer als
-    keine Zeit.
+    Anders als MBFile zaehlt Core Data ab 2001 - das ist am echten Backup
+    belegt: die so umgerechneten Nachrichtendaten liegen zwischen 2017 und
+    heute, waehrend dieselben Werte als Unix-Zeit in den Neunzigern landen
+    wuerden.
+
+    Die Obergrenze ist "jetzt" mit einem Tag Spielraum: eine Nachricht kann
+    nicht in der Zukunft gesendet worden sein. Unplausible Werte werden zu
+    None, weil eine erfundene Zeit schlimmer ist als keine.
     """
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         return None
@@ -267,7 +273,9 @@ def _apple_datetime(value: object) -> datetime | None:
         stamp = _APPLE_EPOCH + timedelta(seconds=float(value))
     except (OverflowError, ValueError, OSError):
         return None
-    if not (datetime(2001, 1, 1, tzinfo=UTC) <= stamp <= datetime(2100, 1, 1, tzinfo=UTC)):
+    upper = (now or datetime.now(UTC)) + timedelta(days=1)
+    if not (datetime(2007, 1, 1, tzinfo=UTC) <= stamp <= upper):
+        logger.debug("Unplausibler Core-Data-Zeitstempel verworfen: %s", stamp.isoformat())
         return None
     return stamp
 

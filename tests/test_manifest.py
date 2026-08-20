@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 from msgbackup_extractor.core.manifest import (
-    APPLE_EPOCH,
     ManifestReader,
     ManifestSchemaError,
     decode_mbfile,
@@ -99,8 +98,13 @@ def test_implausible_timestamps_become_none(raw: object) -> None:
     assert decode_mbfile(plist).last_modified is None
 
 
-def test_apple_epoch_is_2001() -> None:
-    assert datetime(2001, 1, 1, tzinfo=UTC) == APPLE_EPOCH
+def test_epochs_are_distinct() -> None:
+    """Die beiden Bezugszeitpunkte duerfen nicht verwechselt werden."""
+    from msgbackup_extractor.core.manifest import APPLE_EPOCH, MBFILE_EPOCH
+
+    assert APPLE_EPOCH.isoformat() == "2001-01-01T00:00:00+00:00"
+    assert MBFILE_EPOCH.isoformat() == "1970-01-01T00:00:00+00:00"
+    assert APPLE_EPOCH != MBFILE_EPOCH
 
 
 # ---------------------------------------------------------------------------
@@ -308,3 +312,86 @@ def test_reader_requires_context_manager(plain_backup: BuiltBackup) -> None:
 def test_count_matches_entries(plain_backup: BuiltBackup) -> None:
     with ManifestReader(plain_backup.path / "Manifest.db") as reader:
         assert reader.count() == len(list(reader.entries()))
+
+
+# ---------------------------------------------------------------------------
+# Epoche der Zeitstempel
+# ---------------------------------------------------------------------------
+
+
+def test_mbfile_uses_the_unix_epoch() -> None:
+    """MBFile zaehlt ab 1970, nicht ab 2001.
+
+    Am echten Backup verifiziert: 4000 von 4000 Werten ergeben mit der
+    Unix-Epoche ein plausibles Datum, mit der Apple-Epoche kein einziges - dort
+    landen sie 31 Jahre in der Zukunft.
+    """
+    from msgbackup_extractor.core.manifest import MBFILE_EPOCH, mbfile_timestamp
+
+    assert datetime(1970, 1, 1, tzinfo=UTC) == MBFILE_EPOCH
+    # 1694890024 ist 2023-09-16, nicht 2054-09-16.
+    assert mbfile_timestamp(1694890024) == datetime(2023, 9, 16, 18, 47, 4, tzinfo=UTC)
+
+
+def test_future_timestamps_are_rejected() -> None:
+    """Eine Datei kann nicht in der Zukunft geaendert worden sein.
+
+    Diese Pruefung ist der Grund, warum eine verwechselte Epoche sofort
+    auffaellt statt erst in Jahrzehnten.
+    """
+    from msgbackup_extractor.core.manifest import mbfile_timestamp
+
+    now = datetime(2026, 8, 20, tzinfo=UTC)
+    # Derselbe Rohwert, faelschlich als Apple-Epoche gelesen, ergaebe 2054.
+    apple_misread = int(
+        (datetime(2054, 9, 16, tzinfo=UTC) - datetime(1970, 1, 1, tzinfo=UTC)).total_seconds()
+    )
+    assert mbfile_timestamp(apple_misread, now=now) is None
+    # Ein Tag Spielraum fuer Uhrenabweichungen bleibt erlaubt.
+    slack = int((now - datetime(1970, 1, 1, tzinfo=UTC)).total_seconds()) + 3600
+    assert mbfile_timestamp(slack, now=now) is not None
+
+
+def test_timestamps_before_the_first_iphone_are_rejected() -> None:
+    from msgbackup_extractor.core.manifest import mbfile_timestamp
+
+    before = int(
+        (datetime(1990, 1, 1, tzinfo=UTC) - datetime(1970, 1, 1, tzinfo=UTC)).total_seconds()
+    )
+    assert mbfile_timestamp(before) is None
+
+
+def test_core_data_uses_the_apple_epoch() -> None:
+    """Core Data zaehlt ab 2001 - die andere Epoche als MBFile."""
+    from msgbackup_extractor.apps.threema import _apple_datetime
+
+    now = datetime(2026, 8, 20, tzinfo=UTC)
+    seconds = int(
+        (datetime(2025, 3, 14, 18, 42, 11, tzinfo=UTC) - datetime(2001, 1, 1, tzinfo=UTC))
+        .total_seconds()
+    )
+    assert _apple_datetime(seconds, now=now) == datetime(
+        2025, 3, 14, 18, 42, 11, tzinfo=UTC
+    )
+
+
+def test_core_data_rejects_future_timestamps() -> None:
+    from msgbackup_extractor.apps.threema import _apple_datetime
+
+    now = datetime(2026, 8, 20, tzinfo=UTC)
+    seconds = int(
+        (datetime(2040, 1, 1, tzinfo=UTC) - datetime(2001, 1, 1, tzinfo=UTC)).total_seconds()
+    )
+    assert _apple_datetime(seconds, now=now) is None
+
+
+def test_backup_timestamps_are_plausible(plain_backup: BuiltBackup) -> None:
+    """Ende-zu-Ende: die Zeitstempel des Fixtures kommen richtig heraus."""
+    with ManifestReader(plain_backup.path / "Manifest.db") as reader:
+        entry = next(
+            e for e in reader.entries() if e.relative_path == "Documents/img/photo1.jpg"
+        )
+    assert entry.last_modified is not None
+    assert entry.last_modified.year == 2025
+    assert entry.last_modified.month == 3
+    assert entry.last_modified.day == 14
