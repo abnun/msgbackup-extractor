@@ -22,6 +22,7 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
+from msgbackup_extractor.core import media as media_module
 from msgbackup_extractor.core.hashing import hash_file
 from msgbackup_extractor.core.logging_setup import get_logger
 from msgbackup_extractor.core.paths import OutputGuard
@@ -99,7 +100,7 @@ class Runner:
 
         try:
             target = self.guard.prepare(planned.output_path)
-            source_hash, written = self._write(planned, target)
+            source_hash, written, head = self._write(planned, target)
         except SourceMissing:
             logger.warning("Quelle fehlt, wird uebersprungen (fileID %s)",
                            (item.source.file_id or "-")[:8])
@@ -152,6 +153,7 @@ class Runner:
         if duplicate_of is None:
             seen[source_hash] = str(planned.output_path)
 
+        measured = media_module.dimensions(head)
         return self._with(
             base,
             outcome=FileOutcome.EXTRACTED,
@@ -160,27 +162,36 @@ class Runner:
             integrity_ok=True,
             link_paths=links,
             duplicate_of=duplicate_of,
+            width=measured[0] if measured else None,
+            height=measured[1] if measured else None,
         )
 
-    def _write(self, planned: PlannedFile, target: Path) -> tuple[str, int]:
+    def _write(self, planned: PlannedFile, target: Path) -> tuple[str, int, bytes]:
         """Schreibt den Inhalt und bildet dabei den Quellhash.
 
         Der Hash entsteht aus denselben Bytes, die geschrieben werden - er kann
         also nicht versehentlich zu einer anderen Fassung der Daten gehoeren.
+
+        Der Anfang der Daten wird zusaetzlich gemerkt, damit die Pixelmasse
+        daraus gelesen werden koennen. Das kostet kein zusaetzliches Lesen: die
+        Bytes laufen hier ohnehin durch.
         """
         digest = hashlib.sha256()
         written = 0
+        head = bytearray()
         try:
             with target.open("wb") as handle:
                 for chunk in self.reader.stream(planned.item):
                     digest.update(chunk)
                     handle.write(chunk)
                     written += len(chunk)
+                    if len(head) < media_module.DIMENSION_SCAN_LIMIT:
+                        head += chunk[: media_module.DIMENSION_SCAN_LIMIT - len(head)]
         except BaseException:
             # Teildatei entfernen: sie waere sonst ein stiller Teilverlust.
             target.unlink(missing_ok=True)
             raise
-        return digest.hexdigest(), written
+        return digest.hexdigest(), written, bytes(head)
 
     def _create_links(self, planned: PlannedFile, target: Path) -> tuple[str, ...]:
         """Legt die zusaetzlichen Pfade an - als Hardlink, sonst als Kopie."""

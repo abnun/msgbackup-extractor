@@ -144,3 +144,84 @@ def test_categories_map_to_export_directories() -> None:
     assert MediaCategory.ARCHIVE.directory == "documents"
     assert MediaCategory.DATABASE.directory == "databases"
     assert MediaCategory.OTHER.directory == "other"
+
+
+# ---------------------------------------------------------------------------
+# Pixelmasse
+# ---------------------------------------------------------------------------
+
+
+def _jpeg_with_size(width: int, height: int) -> bytes:
+    """Ein JPEG-Geruest mit APP0, einem grossen APP1 und danach SOF0.
+
+    Der grosse APP1-Block ist Absicht: echte Fotos tragen dort einen
+    EXIF-Abschnitt mit eingebettetem Vorschaubild von einigen zehn Kilobyte.
+    Wer nur die ersten Kilobyte liest, findet SOF0 nicht.
+    """
+    app0 = b"\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+    payload = b"\x00" * 40_000
+    app1 = b"\xff\xe1" + (len(payload) + 2).to_bytes(2, "big") + payload
+    sof = (
+        b"\xff\xc0\x00\x11\x08"
+        + height.to_bytes(2, "big")
+        + width.to_bytes(2, "big")
+        + b"\x03\x01\x11\x00\x02\x11\x01\x03\x11\x01"
+    )
+    return b"\xff\xd8" + app0 + app1 + sof + b"\xff\xda\x00\x08\x01\x01\x00\x00?\x00"
+
+
+def _png_with_size(width: int, height: int) -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + b"\x00\x00\x00\r"
+        + b"IHDR"
+        + width.to_bytes(4, "big")
+        + height.to_bytes(4, "big")
+        + b"\x08\x06\x00\x00\x00"
+    )
+
+
+@pytest.mark.parametrize(("width", "height"), [(1, 1), (100, 73), (1920, 1080), (3840, 2160)])
+def test_jpeg_dimensions_are_read_from_the_sof_segment(width: int, height: int) -> None:
+    assert media.dimensions(_jpeg_with_size(width, height)) == (width, height)
+
+
+def test_jpeg_dimensions_are_found_behind_a_large_exif_block() -> None:
+    """Genau der Fall echter Fotos - 4 KB Kopf reichen dafuer nicht."""
+    data = _jpeg_with_size(4032, 3024)
+    assert len(data) > 40_000
+    assert media.dimensions(data) == (4032, 3024)
+    # Abgeschnitten vor dem SOF: keine Angabe, aber auch keine geratene.
+    assert media.dimensions(data[:4096]) is None
+
+
+@pytest.mark.parametrize(("width", "height"), [(1, 1), (320, 240), (2000, 3000)])
+def test_png_dimensions(width: int, height: int) -> None:
+    assert media.dimensions(_png_with_size(width, height)) == (width, height)
+
+
+def test_gif_dimensions() -> None:
+    data = b"GIF89a" + (64).to_bytes(2, "little") + (48).to_bytes(2, "little") + b"\x00" * 8
+    assert media.dimensions(data) == (64, 48)
+
+
+def test_webp_vp8x_dimensions() -> None:
+    data = (
+        b"RIFF" + b"\x00" * 4 + b"WEBP" + b"VP8X" + b"\x00" * 8
+        + (511).to_bytes(3, "little") + (383).to_bytes(3, "little") + b"\x00" * 8
+    )
+    assert media.dimensions(data) == (512, 384)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [b"", b"nicht ein bild", b"\xff\xd8", b"\x89PNG\r\n\x1a\n", b"%PDF-1.7\n"],
+)
+def test_unknown_or_truncated_gives_no_dimensions(data: bytes) -> None:
+    """Keine Angabe ist richtig - eine geschaetzte waere falsch."""
+    assert media.dimensions(data) is None
+
+
+def test_zero_dimensions_are_rejected() -> None:
+    assert media.dimensions(_png_with_size(0, 0)) is None
+    assert media.dimensions(_jpeg_with_size(0, 0)) is None

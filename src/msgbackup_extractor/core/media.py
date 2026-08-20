@@ -329,3 +329,116 @@ def detect_file(path: Path, *, filename: str | None = None) -> MediaType:
     with path.open("rb") as handle:
         header = handle.read(HEADER_SIZE)
     return detect(header, filename=filename or path.name)
+
+
+# ---------------------------------------------------------------------------
+# Pixelmasse
+# ---------------------------------------------------------------------------
+
+#: Bis hierhin wird nach den Massangaben gesucht. JPEG-Dateien tragen vor dem
+#: SOF-Marker oft einen EXIF-Block mit eingebettetem Vorschaubild von einigen
+#: zehn Kilobyte; 4 KB reichen dafuer nicht.
+DIMENSION_SCAN_LIMIT: Final = 1024 * 1024
+
+#: JPEG-Marker, die eine Bildgroesse tragen (SOF0-SOF15 ohne DHT/DAC/RST).
+_SOF_MARKERS: Final = frozenset(
+    {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
+)
+
+
+def _jpeg_dimensions(data: bytes) -> tuple[int, int] | None:
+    """Liest Breite und Hoehe aus den JPEG-Segmenten.
+
+    Die Groesse steht im SOF-Segment, und davor koennen beliebig viele andere
+    Segmente liegen. Deshalb wird die Segmentkette entlanggegangen statt an
+    einer festen Stelle gelesen.
+    """
+    if not data.startswith(b"\xff\xd8"):
+        return None
+    offset = 2
+    total = len(data)
+    while offset + 4 <= total:
+        if data[offset] != 0xFF:
+            offset += 1
+            continue
+        marker = data[offset + 1]
+        if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+            offset += 2
+            continue
+        if marker == 0xD9 or marker == 0xDA:  # Bildende bzw. Bilddaten
+            return None
+        length = int.from_bytes(data[offset + 2 : offset + 4], "big")
+        if length < 2:
+            return None
+        if marker in _SOF_MARKERS:
+            if offset + 9 > total:
+                return None
+            height = int.from_bytes(data[offset + 5 : offset + 7], "big")
+            width = int.from_bytes(data[offset + 7 : offset + 9], "big")
+            return (width, height) if width and height else None
+        offset += 2 + length
+    return None
+
+
+def _png_dimensions(data: bytes) -> tuple[int, int] | None:
+    """Liest Breite und Hoehe aus dem IHDR-Block."""
+    if len(data) < 24 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None
+    if data[12:16] != b"IHDR":
+        return None
+    width = int.from_bytes(data[16:20], "big")
+    height = int.from_bytes(data[20:24], "big")
+    return (width, height) if width and height else None
+
+
+def _gif_dimensions(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 10 or not data.startswith((b"GIF87a", b"GIF89a")):
+        return None
+    width = int.from_bytes(data[6:8], "little")
+    height = int.from_bytes(data[8:10], "little")
+    return (width, height) if width and height else None
+
+
+def _webp_dimensions(data: bytes) -> tuple[int, int] | None:
+    """WEBP kennt drei Varianten: VP8, VP8L und VP8X."""
+    if len(data) < 30 or not data.startswith(b"RIFF") or data[8:12] != b"WEBP":
+        return None
+    chunk = data[12:16]
+    if chunk == b"VP8X":
+        width = int.from_bytes(data[24:27], "little") + 1
+        height = int.from_bytes(data[27:30], "little") + 1
+        return (width, height)
+    if chunk == b"VP8 ":
+        if data[23:26] != b"\x9d\x01\x2a":
+            return None
+        width = int.from_bytes(data[26:28], "little") & 0x3FFF
+        height = int.from_bytes(data[28:30], "little") & 0x3FFF
+        return (width, height) if width and height else None
+    if chunk == b"VP8L":
+        bits = int.from_bytes(data[21:25], "little")
+        return ((bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1)
+    return None
+
+
+def dimensions(data: bytes) -> tuple[int, int] | None:
+    """Pixelmasse eines Bildes, aus dem Dateianfang gelesen.
+
+    Warum das hier steht und nicht in einer Bildbibliothek: es ist
+    Formatparsing wie das Keybag-TLV und das NSKeyedArchiver-Plist, und eine
+    Bildbibliothek waere eine zweite Laufzeitabhaengigkeit fuer vier
+    Ganzzahlen.
+
+    Warum die Masse gebraucht werden: die von den Messengern gespeicherten
+    Vorschaubilder sind teils winzig - bei WhatsApp im Median 100 x 73 Pixel.
+    In einer Galeriekachel auf einem Retina-Display waere das eine vierfache
+    Hochskalierung. Mit den echten Massen kann die Ansicht je Kachel die
+    passende Auflaesung waehlen, statt zu raten.
+
+    Gibt None zurueck, wenn das Format keine Masse hergibt oder die Angabe
+    nicht im uebergebenen Anfang liegt. Nichts wird geschaetzt.
+    """
+    for reader in (_jpeg_dimensions, _png_dimensions, _gif_dimensions, _webp_dimensions):
+        found = reader(data)
+        if found is not None:
+            return found
+    return None

@@ -412,6 +412,20 @@ Auswahl unangetastet — das sind zwei verschiedene Absichten.
 
 Zwei Entscheidungen, die dort bewusst so sind:
 
+**Kacheln zeigen die passende Auflösung.** Die von den Messengern
+gespeicherten Vorschaubilder sind teils winzig — am gemessenen Export bei
+WhatsApp im Median **100 × 73 Pixel**, bei Threema 384 Pixel kürzere Seite. In
+einer Galeriekachel von rund 200 CSS-Pixeln wäre das auf einem Retina-Display
+eine vier- bis fünffache Hochskalierung, also sichtbar unscharf.
+
+Deshalb trägt das Export-Manifest die **echten Pixelmaße** jeder Datei, aus dem
+Dateikopf gelesen (JPEG-SOF, PNG-IHDR, GIF, WEBP — Formatparsing, keine
+Bildbibliothek). Die Seite bietet jeder Kachel beide Auflösungen per `srcset`
+an und lässt den Browser je Kachel und Bildschirmdichte selbst wählen. Er nimmt
+die kleinste hinreichende Quelle — das ist seine Aufgabe und er macht es besser
+als eine feste Regel im Generator. Die Statuszeile nennt, wie viele Kacheln auf
+das Original zurückgreifen mussten.
+
 **Vorschaubilder sind keine eigenen Einträge.** Sie sind die Kachel ihres
 Originals — sonst stünde jedes Bild doppelt in der Galerie. Ein Vorschaubild
 *ohne* Original bleibt ein eigener Eintrag und ist als „nur Vorschau"

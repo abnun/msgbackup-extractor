@@ -487,6 +487,11 @@ const DATA = /*__INDEX__*/;
   const MONTHS = ["Januar","Februar","März","April","Mai","Juni",
                   "Juli","August","September","Oktober","November","Dezember"];
 
+  // Muss zur Rasterbreite in der CSS passen: repeat(auto-fill, minmax(140px, 1fr)).
+  // Etwas zu grosszuegig geschaetzt ist richtig - der Browser waehlt dann die
+  // scharfere Quelle, und das ist der Fehler, den wir wollen.
+  const TILE_SIZES = "(max-width: 820px) 33vw, 220px";
+
   const nf = new Intl.NumberFormat("de-DE");
   const num = (n) => nf.format(n);
 
@@ -821,6 +826,12 @@ const DATA = /*__INDEX__*/;
     if (dated !== shown) {
       parts.push(`${num(shown - dated)} ohne Nachrichtendatum`);
     }
+    if (counts.preview_too_small) {
+      parts.push(
+        `${num(counts.preview_too_small)} mit zu kleinem Vorschaubild ` +
+        "(Kachel zeigt das Original)"
+      );
+    }
     document.getElementById("status").innerHTML = parts.join(" · ");
   }
 
@@ -844,6 +855,16 @@ const DATA = /*__INDEX__*/;
       img.loading = "lazy";
       img.decoding = "async";
       img.src = href(it.v);
+      // Die von den Messengern gespeicherten Vorschaubilder sind teils winzig -
+      // bei WhatsApp im Median 100 Pixel breit. In einer 200-CSS-Pixel-Kachel
+      // waere das auf einem Retina-Display eine vierfache Hochskalierung.
+      // Beide Auflaesungen mit ihrer echten Breite anzubieten laesst den
+      // Browser je Kachel und Bildschirmdichte selbst waehlen - das ist seine
+      // Aufgabe und er macht es besser als eine Regel im Generator.
+      if (it.vw && it.w && it.v !== it.p && it.w > it.vw) {
+        img.srcset = `${href(it.v)} ${it.vw}w, ${href(it.p)} ${it.w}w`;
+        img.sizes = TILE_SIZES;
+      }
       img.alt = it.n || "";
       // Ein kaputtes Vorschaubild soll als solches erkennbar sein.
       img.addEventListener("error", () => {

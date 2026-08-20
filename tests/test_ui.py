@@ -736,3 +736,42 @@ def test_dry_run_writes_no_page(
     ])
     capsys.readouterr()
     assert not (output / PAGE_NAME).exists()
+
+
+# ---------------------------------------------------------------------------
+# Aufloesung der Kacheln
+# ---------------------------------------------------------------------------
+
+
+def test_index_carries_both_widths(export_dir: Path) -> None:
+    """Ohne die echten Breiten kann der Browser nicht waehlen."""
+    index = _index(export_dir)
+    with_both = [i for i in index["items"] if i.get("w") and i.get("vw")]
+    assert with_both, "Kein Eintrag mit Original- und Vorschaubreite"
+
+
+def test_page_offers_both_resolutions_per_tile(export_dir: Path) -> None:
+    """srcset statt einer Regel im Generator: der Browser entscheidet besser.
+
+    Die von den Messengern gespeicherten Vorschaubilder sind teils winzig - am
+    echten Export bei WhatsApp im Median 100 Pixel breit. In einer
+    200-CSS-Pixel-Kachel waere das auf einem Retina-Display eine vierfache
+    Hochskalierung.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "img.srcset =" in html
+    assert "img.sizes = TILE_SIZES" in html
+    # Nur wenn das Original tatsaechlich groesser ist, gibt es etwas zu waehlen.
+    assert "it.w > it.vw" in html
+
+
+def test_too_small_previews_are_counted(export_dir: Path) -> None:
+    """Die Zahl gehoert in den Bericht - sonst merkt niemand, dass es sie gibt."""
+    index = _index(export_dir)
+    assert "preview_too_small" in index["counts"]
+    expected = sum(
+        1
+        for i in index["items"]
+        if i.get("vw") and i.get("w") and i["vw"] < 400 and i["w"] > i["vw"]
+    )
+    assert index["counts"]["preview_too_small"] == expected

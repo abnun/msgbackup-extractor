@@ -41,6 +41,8 @@ def _entry_to_dict(entry: ExtractedFile) -> dict[str, Any]:
         "media_type": entry.media_type,
         "detection_method": entry.detection_method,
         "extension_mismatch": entry.extension_mismatch,
+        "width": entry.width,
+        "height": entry.height,
         "chat_name": entry.chat_name,
         "chat_id": entry.chat_id,
         "original_filename": entry.original_filename,

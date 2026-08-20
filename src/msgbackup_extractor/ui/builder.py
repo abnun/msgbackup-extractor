@@ -33,6 +33,12 @@ from msgbackup_extractor.models import FileOutcome, SourceKind, TimestampSource
 logger = get_logger("ui")
 
 PAGE_NAME: Final = "index.html"
+
+#: Ab dieser Pixelbreite gilt ein Vorschaubild fuer eine Galeriekachel als
+#: ausreichend. Eine Kachel ist rund 200 CSS-Pixel breit; auf einem
+#: Retina-Display sind das 400 Geraetepixel. Am echten Export lagen die
+#: Vorschaubilder von WhatsApp im Median bei 100 Pixeln Breite.
+MIN_TILE_WIDTH: Final = 400
 TEMPLATE_NAME: Final = "template.html"
 
 #: Stelle im Template, an der der Index eingesetzt wird.
@@ -75,6 +81,13 @@ class IndexEntry:
     mismatch: bool
     #: Index des Messengers in `messengers`. None bei einer Einzelseite.
     messenger: int | None = None
+    #: Pixelbreite des Originals und des Vorschaubilds. Damit kann der Browser
+    #: per srcset je Kachel und Bildschirmdichte die passende Auflaesung
+    #: waehlen. Ohne diese Angaben wuerde ein 100 Pixel breites Vorschaubild in
+    #: einer 200-CSS-Pixel-Kachel auf einem Retina-Display vierfach
+    #: hochskaliert - genau die unscharfen Kacheln, die auffielen.
+    width: int | None = None
+    preview_width: int | None = None
     #: Zeitstempel der Backupdatei. Bewusst getrennt von `timestamp`: er sagt,
     #: wann das Backup die Datei schrieb, nicht wann der Inhalt entstand. Auf
     #: einer Zeitachse waere er irrefuehrend, als Angabe im Detail nuetzlich.
@@ -103,6 +116,10 @@ class IndexEntry:
             data["x"] = 1
         if self.messenger is not None:
             data["g"] = self.messenger
+        if self.width:
+            data["w"] = self.width
+        if self.preview_width:
+            data["vw"] = self.preview_width
         return data
 
 
@@ -199,15 +216,18 @@ def build_index(
     thumbnails = [entry for entry in files if entry.get("is_thumbnail")]
 
     #: Kennung des Originals -> Pfad seines Vorschaubilds.
-    preview_by_original: dict[str, str] = {}
+    preview_by_original: dict[str, tuple[str, int | None]] = {}
     for thumbnail in thumbnails:
         target = thumbnail.get("thumbnail_of")
         if target:
             preview_by_original.setdefault(
-                target, path_prefix + thumbnail["output_path"]
+                target,
+                (path_prefix + thumbnail["output_path"], thumbnail.get("width")),
             )
 
-    used_previews = {p.removeprefix(path_prefix) for p in preview_by_original.values()}
+    used_previews = {
+        path.removeprefix(path_prefix) for path, _ in preview_by_original.values()
+    }
 
     # Chatnamen sammeln und nach Haeufigkeit ordnen, damit die Filterleiste die
     # grossen Chats zuerst zeigt.
@@ -221,13 +241,15 @@ def build_index(
 
     for entry in originals:
         identity = _identity(entry)
-        preview = preview_by_original.get(identity) if identity else None
+        found = preview_by_original.get(identity) if identity else None
+        preview, preview_width = found if found else (None, None)
         mime = entry.get("media_type")
         kind = _kind(mime, entry["output_path"])
         stamp, file_time = _split_time(entry)
         if preview is None and kind == "image":
             # Ohne eigenes Vorschaubild dient das Original als Kachel.
             preview = path_prefix + entry["output_path"]
+            preview_width = entry.get("width")
         entries.append(
             IndexEntry(
                 path=path_prefix + entry["output_path"],
@@ -242,6 +264,8 @@ def build_index(
                 preview_only=False,
                 mismatch=bool(entry.get("extension_mismatch")),
                 messenger=messenger,
+                width=entry.get("width"),
+                preview_width=preview_width,
             )
         )
 
@@ -264,6 +288,8 @@ def build_index(
                 preview_only=True,
                 mismatch=bool(thumbnail.get("extension_mismatch")),
                 messenger=messenger,
+                width=thumbnail.get("width"),
+                preview_width=thumbnail.get("width"),
             )
         )
 
@@ -291,6 +317,14 @@ def build_index(
                 1 for e in entries if e.timestamp is None and e.file_time is not None
             ),
             "mismatch": sum(1 for e in entries if e.mismatch),
+            #: Kacheln, deren Vorschaubild fuer eine scharfe Darstellung zu
+            #: klein ist und die deshalb auf das Original zurueckgreifen.
+            "preview_too_small": sum(
+                1
+                for e in entries
+                if e.preview_width and e.width and e.preview_width < MIN_TILE_WIDTH
+                and e.width > e.preview_width
+            ),
             "total_bytes": summary.get("total_bytes"),
             "item_bytes": sum(e.size or 0 for e in entries),
             "manifest_total": summary.get("total"),

@@ -1036,3 +1036,44 @@ Wenn das Erzeugen der Ansicht scheitert, sind die Dateien längst geschrieben un
 ihre Hashes geprüft. Der Fehler wird deshalb als Hinweis gemeldet und nicht
 geworfen — ein misslungenes HTML darf einen gültigen 14-GB-Export nicht als
 gescheitert erscheinen lassen.
+
+
+---
+
+## 25. Nachtrag: Unscharfe Kacheln (2026-08-20)
+
+Beim Durchsehen der Galerie fielen unscharfe Kacheln auf. Die Frage war, ob es
+am Vorschaubild oder an der Skalierung liegt. Gemessen (Stichprobe 60 je
+Gruppe, kürzere Seite):
+
+| | Vorschaubilder | Originale |
+|---|---|---|
+| Threema | Median **384 px**, 47/60 unter 400 | Median [Anzahl entfernt] px |
+| WhatsApp | Median **73 px**, 60/60 unter 400 | Median 742 px |
+
+WhatsApps Vorschaubilder sind im Median 100 × 73 Pixel. Eine Kachel ist rund
+200 CSS-Pixel breit, auf einem Retina-Display also 400 Gerätepixel — eine
+vier- bis fünffache Hochskalierung. Es lag am Vorschaubild, nicht an der
+Skalierung.
+
+**Lösung.** Nicht eine Regel im Generator, sondern `srcset`: die Seite bietet
+jeder Kachel beide Auflösungen mit ihrer echten Breite an, der Browser wählt je
+Kachel und Bildschirmdichte. Er nimmt die kleinste hinreichende Quelle, was
+zugleich der schnellere Weg ist.
+
+**Woher die Maße kommen.** Das Manifest trägt sie jetzt. Gelesen werden sie aus
+dem Dateikopf — JPEG-SOF-Segmentkette, PNG-IHDR, GIF-Header, WEBP in allen drei
+Varianten. Das ist Formatparsing wie das Keybag-TLV; eine Bildbibliothek wäre
+eine zweite Laufzeitabhängigkeit für vier Ganzzahlen.
+
+**Ohne zusätzliches Lesen.** Der Runner liest jede Datei beim Hashen ohnehin
+vollständig. Die Maße entstehen aus dem ersten Megabyte dieses Durchlaufs. Ein
+Megabyte statt vier Kilobyte ist nötig, weil echte Fotos vor dem SOF-Segment
+einen EXIF-Block mit eingebettetem Vorschaubild von einigen zehn Kilobyte
+tragen; ein Test prüft genau diesen Fall.
+
+**Gegen `sips` geprüft:** [Anzahl entfernt] Stichproben exakt übereinstimmend.
+
+**Wirkung.** Threema: [Anzahl entfernt] Kacheln hatten ein zu kleines
+Vorschaubild. Nach der Umstellung, gemessen an einer 146-CSS-Pixel-Kachel bei
+doppelter Pixeldichte: 0 von 24 geprüften Kacheln noch hochskaliert.

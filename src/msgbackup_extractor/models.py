@@ -434,6 +434,11 @@ class ExtractedFile:
     media_type: str | None = None
     detection_method: str | None = None
     extension_mismatch: bool = False
+    #: Pixelmasse, soweit aus dem Dateikopf lesbar. Die Ansicht braucht sie, um
+    #: je Kachel die passende Auflaesung zu waehlen: die von den Messengern
+    #: gespeicherten Vorschaubilder sind teils winzig.
+    width: int | None = None
+    height: int | None = None
     #: Quellangaben - Pfade nur, soweit sie fuer die Nachvollziehbarkeit noetig sind.
     source_file_id: str | None = None
     source_domain: str | None = None
