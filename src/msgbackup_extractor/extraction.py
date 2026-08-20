@@ -141,7 +141,9 @@ class Extractor:
 
             plan = Planner(reader=media_reader, options=self.options).build(items)
             guard = OutputGuard(
-                root=self.output_dir, forbidden_roots=(self.session.backup.path,)
+                root=self.output_dir,
+                forbidden_roots=(self.session.backup.path,),
+                forbidden_label="Backup",
             )
             result = Runner(
                 reader=media_reader, guard=guard, options=self.options

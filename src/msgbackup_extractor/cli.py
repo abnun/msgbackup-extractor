@@ -42,6 +42,11 @@ from msgbackup_extractor.core.sqlite_ro import (
     open_readonly,
 )
 from msgbackup_extractor.extract import export_manifest
+from msgbackup_extractor.extract.collect import (
+    CollectOptions,
+    Collector,
+    parse_selection,
+)
 from msgbackup_extractor.extract.export_manifest import InvalidManifest
 from msgbackup_extractor.extract.planner import ExtractOptions
 from msgbackup_extractor.extract.verify import verify as verify_export
@@ -320,6 +325,74 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ui.add_argument("--verbose", action="store_true", help="Technische Details.")
     ui.set_defaults(handler=_command_ui)
+
+    collect = subparsers.add_parser(
+        "collect",
+        help="Im UI ausgewaehlte Dateien in ein Verzeichnis sammeln",
+        description=(
+            "Traegt die Dateien einer Auswahlliste zusammen. Die Liste kommt "
+            "aus der lokalen Ansicht (msgx ui) - JavaScript darf lokale Dateien "
+            "anzeigen, aber nicht lesen, deshalb sammelt die CLI sie ein."
+        ),
+        epilog=(
+            "Beispiel mit der Zwischenablage:\n"
+            "  pbpaste | msgx collect --output EXPORT --target ~/Auswahl --selection -"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    collect.add_argument(
+        "--output",
+        type=Path,
+        metavar="PFAD",
+        required=True,
+        help="Das Exportverzeichnis oder dessen export-manifest.json.",
+    )
+    collect.add_argument(
+        "--target",
+        type=Path,
+        metavar="PFAD",
+        required=True,
+        help="Wohin gesammelt wird. Muss ausserhalb des Exports liegen.",
+    )
+    collect.add_argument(
+        "--selection",
+        metavar="PFAD",
+        required=True,
+        help="Datei mit einem relativen Pfad je Zeile, oder - fuer die Standardeingabe.",
+    )
+    collect.add_argument(
+        "--hardlinks",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Hardlinks statt Kopien; die Sammlung belegt dann keinen "
+            "zusaetzlichen Speicher. Zum Weitergeben --no-hardlinks."
+        ),
+    )
+    collect.add_argument(
+        "--keep-structure",
+        action="store_true",
+        help="Verzeichnisstruktur des Exports beibehalten statt flach zu sammeln.",
+    )
+    collect.add_argument(
+        "--verify",
+        action="store_true",
+        help="SHA-256 jeder Datei gegen das Export-Manifest pruefen.",
+    )
+    collect.add_argument(
+        "--dry-run", action="store_true", help="Zeigt nur an, was gesammelt wuerde."
+    )
+    collect.add_argument(
+        "--allow-cloud-output",
+        action="store_true",
+        help="Erlaubt ein Zielverzeichnis in einem Cloud-Sync-Ordner.",
+    )
+    collect.add_argument("--verbose", action="store_true", help="Technische Details.")
+    collect.add_argument(
+        "--json", type=Path, metavar="PFAD", dest="json_path",
+        help="Schreibt den Bericht zusaetzlich als JSON.",
+    )
+    collect.set_defaults(handler=_command_collect)
 
     return parser
 
@@ -693,6 +766,71 @@ def _command_ui(arguments: argparse.Namespace) -> int:
     print("\n".join(lines))
     print(f"\nZum Oeffnen:\n    open {target}", file=sys.stderr)
     return EXIT_OK
+
+
+def _command_collect(arguments: argparse.Namespace) -> int:
+    manifest_path = arguments.output.expanduser()
+    if manifest_path.is_dir():
+        manifest_path = manifest_path / export_manifest.MANIFEST_NAME
+
+    try:
+        manifest = export_manifest.load(manifest_path)
+    except InvalidManifest as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    target = arguments.target.expanduser()
+    try:
+        require_non_cloud_path(
+            target, purpose="Zielverzeichnis", allow=arguments.allow_cloud_output
+        )
+    except CloudSyncedPathError as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if arguments.selection == "-":
+        text = sys.stdin.read()
+    else:
+        source = Path(arguments.selection).expanduser()
+        try:
+            text = source.read_text(encoding="utf-8")
+        except OSError as error:
+            print(
+                f"Fehler: Auswahlliste nicht lesbar ({type(error).__name__}).",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+
+    selection = parse_selection(text)
+    if not selection:
+        print(
+            "Fehler: Die Auswahlliste ist leer. Erwartet wird ein relativer "
+            "Pfad je Zeile,\nwie ihn die lokale Ansicht ausgibt.",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    options = CollectOptions(
+        hardlinks=arguments.hardlinks,
+        keep_structure=arguments.keep_structure,
+        verify=arguments.verify,
+        dry_run=arguments.dry_run,
+    )
+    try:
+        result = Collector(
+            manifest=manifest, target_dir=target, options=options
+        ).run(selection)
+    except OutputGuardError as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    print(reports.render_collect_text(result))
+    if arguments.json_path is not None:
+        destination = arguments.json_path.expanduser()
+        reports.write_json(reports.collect_to_dict(result), destination)
+        print(f"JSON-Bericht geschrieben: {destination}", file=sys.stderr)
+
+    return EXIT_OK if not result.problems else EXIT_ERROR
 
 
 def _command_verify(arguments: argparse.Namespace) -> int:

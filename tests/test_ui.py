@@ -314,3 +314,58 @@ def test_ui_without_thumbnails_still_works(
     # Bilder dienen sich selbst als Kachel.
     images = [i for i in index["items"] if i["k"] == "image"]
     assert images and all(i.get("v") == i["p"] for i in images)
+
+
+# ---------------------------------------------------------------------------
+# Auswahl und Uebergabe an die CLI
+# ---------------------------------------------------------------------------
+
+
+def test_page_offers_selection_and_handover(export_dir: Path) -> None:
+    """Die Seite muss Auswahl, Sammelleiste und Uebergabedialog enthalten."""
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    for element in ('id="tray"', 'id="tray-all"', 'id="tray-clear"', 'id="tray-hand"',
+                    'id="hand"', 'id="hand-list"', 'id="hand-cmd"', 'id="v-pick"'):
+        assert element in html, f"{element} fehlt"
+    # Der Auswahlknopf entsteht im JavaScript, nicht als Markup.
+    assert 'pick.className = "pick"' in html
+    assert ".pick {" in html
+
+
+def test_page_does_not_promise_a_browser_download(export_dir: Path) -> None:
+    """Ein ZIP im Browser ist unmoeglich - die Seite darf es nicht andeuten.
+
+    Auf einer `file://`-Seite sind `fetch` und `XHR` blockiert und ein Canvas
+    mit lokalem Bild ist tainted. JavaScript kann die Bytes also nicht lesen.
+    Ein Knopf, der einen Download verspricht und nichts liefert, waere
+    schlimmer als kein Knopf.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "download=" not in html
+    assert "createObjectURL" not in html
+    assert "new Blob" not in html
+    # Stattdessen wird der CLI-Weg genannt.
+    assert "msgx collect" in html
+
+
+def test_handover_command_uses_the_export_directory(export_dir: Path) -> None:
+    """Der Befehl im Dialog muss auf das eigene Verzeichnis zeigen.
+
+    Er wird zur Laufzeit aus `location.pathname` gebildet - die Seite liegt im
+    Export, also ist es deren Elternverzeichnis.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "location.pathname" in html
+    assert "--selection -" in html
+    assert "--target" in html
+
+
+def test_selection_survives_a_filter_change(export_dir: Path) -> None:
+    """Die Auswahl wird nach Pfad gehalten, nicht nach Position im Filter.
+
+    Sonst verliert man beim Wechsel des Chats die halbe Auswahl, ohne es zu
+    merken.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "const selected = new Set()" in html
+    assert "selected.has(it.p)" in html

@@ -778,3 +778,79 @@ Stichprobe von 400 exportierten Bildern: alle mit gültiger Signatur, JPEGs mit
 korrekter Endmarke `FFD9`, keine Datei mit verbliebenem `0x01`-Vorspann.
 
 Das Backup blieb unverändert; es entstanden keine SQLite-Nebenprodukte.
+
+
+---
+
+## 22. Nachtrag: Auswahl im UI und Einsammeln (2026-08-20)
+
+### 22.1 Warum es keinen Download-Knopf gibt
+
+Gemessen an einer `file://`-Seite des echten Exports:
+
+| Fähigkeit | Ergebnis |
+|---|---|
+| `fetch(pfad)` | BLOCKIERT — `TypeError: Failed to fetch` |
+| `XMLHttpRequest` | BLOCKIERT |
+| `<img src=pfad>` anzeigen | OK (1202×1600) |
+| `canvas.getImageData()` nach `drawImage` | BLOCKIERT — `SecurityError` |
+| `window.isSecureContext` | `true` |
+| Clipboard API | vorhanden |
+
+JavaScript kann lokale Mediendateien **anzeigen**, aber ihre Bytes nicht
+lesen — auch der Canvas-Umweg ist versperrt, weil ein Canvas mit lokalem Bild
+„tainted" ist. Ein ZIP im Browser ist damit unmöglich, unabhängig von der
+Dateigröße.
+
+Konsequenz für die Architektur: **das UI wählt aus, die CLI sammelt ein.** Der
+Übergabedialog zeigt die Liste der ausgewählten Pfade und den fertigen Befehl;
+die Zwischenablage ist der Übergabeweg
+(`pbpaste | msgx collect … --selection -`).
+
+Ein Test hält das fest: die Seite darf kein `download=`, kein
+`createObjectURL` und kein `new Blob` enthalten. Ein Knopf, der einen Download
+verspricht und nichts liefert, wäre schlechter als kein Knopf.
+
+### 22.2 Auswahl im UI
+
+* Häkchen auf jeder Kachel; Klick darauf öffnet nicht die Einzelansicht.
+* Umschalttaste wählt einen Bereich; die Richtung bestimmt der Zustand des
+  Ankers, damit ein Bereich auch abgewählt werden kann.
+* „Alle im Filter auswählen" bezieht sich auf den gerade aktiven Filter und
+  schlägt bei vollständiger Auswahl in „Auswahl im Filter aufheben" um.
+* Die Auswahl wird **nach Pfad** gehalten, nicht nach Position im Filter.
+  Sonst verliert man beim Wechsel des Chats die halbe Auswahl, ohne es zu
+  merken.
+* Leertaste wählt in der Einzelansicht aus.
+
+### 22.3 `msgx collect`
+
+Sammelt die Pfade einer Auswahlliste in ein Zielverzeichnis. Standardmäßig per
+Hardlink — eine Sammlung von 937 MB belegte im Versuch **null** zusätzliche
+Bytes. `--no-hardlinks` erzeugt echte Kopien, `--keep-structure` behält die
+Verzeichnisstruktur, `--verify` prüft jede Datei gegen den SHA-256 im
+Export-Manifest.
+
+Auch die Zusatzpfade der Chat-Struktur sind gültige Auswahlen: das Manifest
+führt sie als `link_paths`, und `collect` akzeptiert beide Seiten.
+
+Der Output-Guard verweigert ein Zielverzeichnis innerhalb des Exports. Dabei
+fiel auf, dass seine Meldung hart „Backup" nannte, obwohl hier der Export
+geschützt wird — sie ist jetzt über `forbidden_label` parametrisiert. Eine
+Meldung, die das Falsche nennt, schickt bei der Fehlersuche in die Irre.
+
+### 22.4 Am echten Export erprobt
+
+Filter auf „Videos", „Alle im Filter auswählen", Übergabedialog, dann
+`msgx collect --verify`:
+
+| | |
+|---|---|
+| Ausgewählt | 179 Dateien, [Menge entfernt] |
+| Eingesammelt | 179 |
+| Hashes geprüft | alle in Ordnung |
+| Per Hardlink verbunden | [Anzahl entfernt] |
+| Zusätzlich belegter Speicher | 0 |
+| Laufzeit | unter einer Sekunde |
+
+Der Export blieb dabei unverändert.

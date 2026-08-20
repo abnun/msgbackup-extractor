@@ -133,8 +133,28 @@ def test_guard_refuses_output_inside_backup(tmp_path: Path) -> None:
 def test_guard_refuses_output_that_contains_the_backup(tmp_path: Path) -> None:
     backup = tmp_path / "daten" / "backup"
     backup.mkdir(parents=True)
-    with pytest.raises(OutputGuardError, match="enthaelt das Backup"):
+    with pytest.raises(OutputGuardError, match="enthaelt des Backups"):
         OutputGuard(root=tmp_path / "daten", forbidden_roots=(backup,))
+
+
+def test_guard_message_names_what_it_protects(tmp_path: Path) -> None:
+    """Der Guard schuetzt je nach Aufrufer das Backup oder einen Export.
+
+    Eine Meldung, die das Falsche nennt, schickt bei der Fehlersuche in die
+    Irre - genau das ist beim ersten `collect`-Lauf passiert.
+    """
+    export = tmp_path / "export"
+    export.mkdir()
+    with pytest.raises(OutputGuardError, match="innerhalb des Exports"):
+        OutputGuard(
+            root=export / "drin", forbidden_roots=(export,), forbidden_label="Export"
+        )
+    backup = tmp_path / "backup"
+    backup.mkdir()
+    with pytest.raises(OutputGuardError, match="innerhalb des Backups"):
+        OutputGuard(
+            root=backup / "drin", forbidden_roots=(backup,), forbidden_label="Backup"
+        )
 
 
 def test_guard_prepare_creates_parent_directories(tmp_path: Path) -> None:

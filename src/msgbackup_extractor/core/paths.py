@@ -163,6 +163,10 @@ class OutputGuard:
 
     root: Path
     forbidden_roots: tuple[Path, ...] = ()
+    #: Wie der geschuetzte Bereich in Fehlermeldungen heisst. Der Guard schuetzt
+    #: je nach Aufrufer das Backup oder einen bestehenden Export - eine Meldung,
+    #: die das Falsche nennt, schickt bei der Fehlersuche in die Irre.
+    forbidden_label: str = "Backup"
 
     def __post_init__(self) -> None:
         self.root = self.root.expanduser().resolve()
@@ -172,14 +176,21 @@ class OutputGuard:
         for forbidden in self.forbidden_roots:
             if self.root == forbidden or forbidden in self.root.parents:
                 raise OutputGuardError(
-                    "Das Ausgabeverzeichnis liegt innerhalb des Backups. Der Export "
-                    "muss in ein davon getrenntes Verzeichnis gehen."
+                    f"Das Zielverzeichnis liegt innerhalb {self.forbidden_article()}. "
+                    "Es muss ein davon getrenntes Verzeichnis sein."
                 )
             if self.root in forbidden.parents:
                 raise OutputGuardError(
-                    "Das Ausgabeverzeichnis enthaelt das Backup. Waehle ein "
-                    "Verzeichnis, das das Backup nicht umschliesst."
+                    f"Das Zielverzeichnis enthaelt {self.forbidden_article()}. "
+                    f"Waehle ein Verzeichnis, das {self.forbidden_label} nicht "
+                    "umschliesst."
                 )
+
+    def forbidden_article(self) -> str:
+        """Der geschuetzte Bereich im Dativ, fuer lesbare Meldungen."""
+        return f"des {self.forbidden_label}s" if self.forbidden_label.endswith(
+            ("Backup", "Export")
+        ) else f"von {self.forbidden_label}"
 
     def resolve(self, relative: str | PurePosixPath | Path) -> Path:
         """Loest einen relativen Zielpfad innerhalb von `root` auf."""
@@ -195,7 +206,9 @@ class OutputGuard:
             )
         for forbidden in self.forbidden_roots:
             if target == forbidden or forbidden in target.parents:
-                raise OutputGuardError("Der Zielpfad liegt im Backup-Verzeichnis")
+                raise OutputGuardError(
+                    f"Der Zielpfad liegt in {self.forbidden_article()}"
+                )
         return target
 
     def prepare(self, relative: str | PurePosixPath | Path) -> Path:

@@ -226,6 +226,87 @@ kbd {
   padding: 1px 5px; border-radius: 4px; font-size: 11px;
   background: var(--panel-2); border: 1px solid var(--line);
 }
+
+/* -- Auswahl ------------------------------------------------------------- */
+.pick {
+  position: absolute; top: 6px; right: 6px; z-index: 2;
+  width: 24px; height: 24px; padding: 0; border-radius: 6px; cursor: pointer;
+  display: grid; place-items: center;
+  background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.55);
+  color: #fff; opacity: 0; transition: opacity .12s;
+}
+.cell:hover .pick, .cell:focus-within .pick, .pick[aria-pressed="true"] { opacity: 1; }
+.pick[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent);
+}
+.pick svg { display: block; }
+.pick .tick { visibility: hidden; }
+.pick[aria-pressed="true"] .tick { visibility: visible; }
+.cell.selected { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+.cell.selected img { opacity: .8; }
+
+.tray {
+  position: fixed; inset: auto 0 0 0; z-index: 40;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 11px 16px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -6px 24px rgba(0,0,0,.10);
+}
+.tray[hidden] { display: none; }
+.tray .count { font-weight: 650; font-variant-numeric: tabular-nums; }
+.tray .sub { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.tray .spacer { flex: 1; }
+.tray button {
+  padding: 7px 13px; border-radius: 8px; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--line);
+}
+.tray button:hover { border-color: var(--accent); color: var(--accent); }
+.tray button.primary {
+  background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+}
+.tray button.primary:hover { color: #fff; filter: brightness(1.08); }
+main { padding-bottom: 80px; }
+
+dialog#hand {
+  width: min(94vw, 780px); padding: 0; border: 0; border-radius: 14px;
+  background: var(--panel); color: var(--text); box-shadow: var(--shadow);
+}
+dialog#hand::backdrop { background: rgba(0,0,0,.6); }
+.hand { padding: 20px 22px 18px; }
+.hand h2 {
+  margin: 0 0 4px; font-size: 16px; font-weight: 650;
+  text-transform: none; letter-spacing: 0; color: var(--text);
+}
+.hand p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+.hand pre {
+  margin: 0 0 8px; padding: 11px 13px; overflow-x: auto;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px;
+  font-size: 12px; line-height: 1.6; white-space: pre; -webkit-user-select: all;
+  user-select: all;
+}
+.hand textarea {
+  width: 100%; height: 190px; resize: vertical; padding: 10px 12px;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 9px;
+  font: 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre; overflow-wrap: normal;
+}
+.hand .actions { display: flex; gap: 8px; margin-top: 14px; }
+.hand .actions button {
+  padding: 8px 14px; border-radius: 8px; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--line);
+}
+.hand .actions button.primary {
+  background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+}
+.hand .actions .spacer { flex: 1; }
+.hand .said { color: var(--accent); font-size: 12.5px; align-self: center; }
+.hand h3 {
+  margin: 18px 0 6px; font-size: 12px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+}
 </style>
 </head>
 <body>
@@ -264,6 +345,33 @@ kbd {
   </main>
 </div>
 
+<div class="tray" id="tray" hidden>
+  <span class="count" id="tray-count"></span>
+  <span class="sub" id="tray-size"></span>
+  <span class="spacer"></span>
+  <button type="button" id="tray-all"></button>
+  <button type="button" id="tray-clear">Auswahl aufheben</button>
+  <button type="button" class="primary" id="tray-hand">Auswahl übernehmen …</button>
+</div>
+
+<dialog id="hand">
+  <div class="hand">
+    <h2>Auswahl herunterladen</h2>
+    <p id="hand-intro"></p>
+    <h3>Schritt 1 — Liste kopieren</h3>
+    <textarea id="hand-list" readonly spellcheck="false"></textarea>
+    <h3>Schritt 2 — im Terminal einsammeln</h3>
+    <pre id="hand-cmd"></pre>
+    <div class="actions">
+      <button type="button" class="primary" id="hand-copy">Liste kopieren</button>
+      <button type="button" id="hand-copy-cmd">Befehl kopieren</button>
+      <span class="said" id="hand-said"></span>
+      <span class="spacer"></span>
+      <button type="button" id="hand-close">Schließen</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="viewer">
   <div class="viewer">
     <div class="stage" id="stage"></div>
@@ -275,7 +383,11 @@ kbd {
         <button type="button" id="v-prev">← Zurück</button>
         <button type="button" id="v-next">Weiter →</button>
       </div>
-      <p class="hint"><kbd>←</kbd> <kbd>→</kbd> blättern, <kbd>Esc</kbd> schließen</p>
+      <div class="nav">
+        <button type="button" id="v-pick"></button>
+      </div>
+      <p class="hint"><kbd>←</kbd> <kbd>→</kbd> blättern, <kbd>Leer</kbd> auswählen,
+        <kbd>Esc</kbd> schließen</p>
     </div>
   </div>
 </dialog>
@@ -392,6 +504,12 @@ const DATA = /*__INDEX__*/;
     kinds: new Set(), years: new Set(), chats: new Set(), flags: new Set(), q: "",
   };
   let filtered = items;
+
+  // Auswahl nach Pfad, damit sie einen Filterwechsel ueberlebt. Wer erst in
+  // einem Chat auswaehlt und dann in einem anderen, verliert sonst die erste
+  // Haelfte, ohne es zu merken.
+  const selected = new Set();
+  let anchor = -1;   // fuer Auswahl mit gedrueckter Umschalttaste
 
   function apply() {
     const q = state.q.trim().toLowerCase();
@@ -553,8 +671,101 @@ const DATA = /*__INDEX__*/;
     }
     b.title = `${it.n || it.p}\n${fullDate(it.t)}`;
     b.addEventListener("click", () => open(position));
+
+    const pick = document.createElement("button");
+    pick.type = "button";
+    pick.className = "pick";
+    pick.setAttribute("aria-pressed", selected.has(it.p) ? "true" : "false");
+    pick.title = "Auswählen (mit Umschalt: Bereich)";
+    pick.setAttribute("aria-label", "Auswählen");
+    pick.innerHTML =
+      '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">' +
+      '<path class="tick" d="M5 12.6l4.2 4.2L19 7.2" fill="none" stroke="currentColor" ' +
+      'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.3" opacity=".55"/></svg>';
+    pick.addEventListener("click", (e) => {
+      e.stopPropagation();   // nicht die Einzelansicht oeffnen
+      choose(position, e.shiftKey);
+    });
+    b.append(pick);
+    if (selected.has(it.p)) b.classList.add("selected");
     return b;
   }
+
+  /* --- Auswahl ---------------------------------------------------------- */
+
+  function choose(position, range) {
+    if (range && anchor >= 0) {
+      const [from, to] = anchor <= position ? [anchor, position] : [position, anchor];
+      // Der Zustand des Ankers bestimmt die Richtung fuer den ganzen Bereich.
+      const add = selected.has(filtered[anchor].p);
+      for (let i = from; i <= to; i++) {
+        if (add) selected.add(filtered[i].p);
+        else selected.delete(filtered[i].p);
+      }
+    } else {
+      const it = filtered[position];
+      if (selected.has(it.p)) selected.delete(it.p);
+      else selected.add(it.p);
+      anchor = position;
+    }
+    syncCells();
+    renderTray();
+  }
+
+  function syncCells() {
+    document.querySelectorAll(".cell").forEach((c) => {
+      const it = filtered[Number(c.dataset.pos)];
+      if (!it) return;
+      const on = selected.has(it.p);
+      c.classList.toggle("selected", on);
+      const pick = c.querySelector(".pick");
+      if (pick) pick.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    if (viewer.open) syncViewerPick();
+  }
+
+  function selectedItems() {
+    // Reihenfolge wie im Index, damit die Liste nachvollziehbar bleibt.
+    return items.filter((it) => selected.has(it.p));
+  }
+
+  function renderTray() {
+    const tray = document.getElementById("tray");
+    const chosen = selectedItems();
+    tray.hidden = chosen.length === 0;
+    if (!chosen.length) return;
+
+    document.getElementById("tray-count").textContent =
+      `${num(chosen.length)} ausgewählt`;
+    document.getElementById("tray-size").textContent =
+      size(chosen.reduce((a, it) => a + (it.s || 0), 0));
+
+    const allInFilter = filtered.length > 0 && filtered.every((it) => selected.has(it.p));
+    const button = document.getElementById("tray-all");
+    button.textContent = allInFilter
+      ? `Auswahl im Filter aufheben (${num(filtered.length)})`
+      : `Alle im Filter auswählen (${num(filtered.length)})`;
+    button.dataset.mode = allInFilter ? "clear" : "add";
+  }
+
+  document.getElementById("tray-all").addEventListener("click", (e) => {
+    const clear = e.currentTarget.dataset.mode === "clear";
+    for (const it of filtered) {
+      if (clear) selected.delete(it.p);
+      else selected.add(it.p);
+    }
+    syncCells();
+    renderTray();
+  });
+
+  document.getElementById("tray-clear").addEventListener("click", () => {
+    selected.clear();
+    anchor = -1;
+    syncCells();
+    renderTray();
+  });
 
   function badge(text, warn, kind) {
     const s = document.createElement("span");
@@ -630,6 +841,7 @@ const DATA = /*__INDEX__*/;
     }
     host.insertBefore(frag, sentinel);
     cursor = end;
+    renderTray();
   }
 
   /* --- Einzelansicht ---------------------------------------------------- */
@@ -719,6 +931,16 @@ const DATA = /*__INDEX__*/;
 
     document.getElementById("v-prev").disabled = position <= 0;
     document.getElementById("v-next").disabled = position >= filtered.length - 1;
+    syncViewerPick();
+  }
+
+  function syncViewerPick() {
+    const it = filtered[position];
+    const button = document.getElementById("v-pick");
+    if (!it || !button) return;
+    const on = selected.has(it.p);
+    button.textContent = on ? "✓ Ausgewählt — abwählen" : "Zur Auswahl hinzufügen";
+    button.setAttribute("aria-pressed", on ? "true" : "false");
   }
 
   function fallback(it) {
@@ -738,6 +960,9 @@ const DATA = /*__INDEX__*/;
     show();
   }
 
+  document.getElementById("v-pick").addEventListener("click", () => {
+    if (position >= 0) choose(position, false);
+  });
   document.getElementById("v-prev").addEventListener("click", () => step(-1));
   document.getElementById("v-next").addEventListener("click", () => step(1));
   viewer.addEventListener("close", () => { stage.textContent = ""; });
@@ -746,7 +971,69 @@ const DATA = /*__INDEX__*/;
     if (!viewer.open) return;
     if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
     if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+    if (e.key === " ") { e.preventDefault(); if (position >= 0) choose(position, false); }
   });
+
+  /* --- Uebergabe an die CLI --------------------------------------------- */
+
+  // Das Exportverzeichnis steht im eigenen Pfad. Die Seite liegt darin, also
+  // ist es einfach das Elternverzeichnis von index.html.
+  function exportDir() {
+    const path = decodeURIComponent(location.pathname);
+    return path.replace(/\/[^/]*$/, "") || "/";
+  }
+  const shellQuote = (s) => "'" + s.replace(/'/g, "'\\''") + "'";
+
+  function command() {
+    return "pbpaste | msgx collect \\\n" +
+      "    --output " + shellQuote(exportDir()) + " \\\n" +
+      "    --target ~/Auswahl \\\n" +
+      "    --selection -";
+  }
+
+  function say(text) {
+    const said = document.getElementById("hand-said");
+    said.textContent = text;
+    setTimeout(() => { if (said.textContent === text) said.textContent = ""; }, 2600);
+  }
+
+  async function toClipboard(text, label) {
+    try {
+      await navigator.clipboard.writeText(text);
+      say(label + " kopiert");
+      return;
+    } catch {
+      // Ohne Zwischenablage-Recht bleibt die Auswahl im Textfeld - von dort
+      // laesst sich immer von Hand kopieren.
+      const box = document.getElementById("hand-list");
+      box.focus();
+      box.select();
+      say("Bitte mit ⌘C kopieren");
+    }
+  }
+
+  const hand = document.getElementById("hand");
+  document.getElementById("tray-hand").addEventListener("click", () => {
+    const chosen = selectedItems();
+    if (!chosen.length) return;
+    document.getElementById("hand-intro").textContent =
+      `${num(chosen.length)} Dateien, ${size(chosen.reduce((a, it) => a + (it.s || 0), 0))}. ` +
+      "Der Browser darf lokale Dateien anzeigen, aber nicht lesen — deshalb " +
+      "sammelt sie die CLI ein.";
+    document.getElementById("hand-list").value =
+      chosen.map((it) => it.p).join("\n") + "\n";
+    document.getElementById("hand-cmd").textContent = command();
+    document.getElementById("hand-said").textContent = "";
+    hand.showModal();
+  });
+  document.getElementById("hand-copy").addEventListener("click", () => {
+    toClipboard(document.getElementById("hand-list").value, "Liste");
+  });
+  document.getElementById("hand-copy-cmd").addEventListener("click", () => {
+    toClipboard(command(), "Befehl");
+  });
+  document.getElementById("hand-close").addEventListener("click", () => hand.close());
+  hand.addEventListener("click", (e) => { if (e.target === hand) hand.close(); });
 
   /* --- Start ------------------------------------------------------------ */
 

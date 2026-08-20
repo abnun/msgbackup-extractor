@@ -16,6 +16,7 @@ gebaut, WhatsApp und Signal sind vorgesehen.
 > | `extract` | fertig, inkl. Chat-Zuordnung |
 > | `verify` | fertig |
 > | `ui` | fertig |
+> | `collect` | fertig |
 >
 > Danach vorgesehen: ein zweites App-Profil (WhatsApp/Signal).
 >
@@ -155,7 +156,10 @@ Aufbau:
 - **Filter** für Medientyp, Jahr, Chat und Besonderheiten (ohne Chat, ohne
   Datum, nur Vorschaubild, Endung ≠ Inhalt) sowie Suche im Dateinamen
 - **Einzelansicht** mit Original, Videoplayer, Metadaten und Tastaturnavigation
-  (`←` `→` `Esc`)
+  (`←` `→` blättern, `Leer` auswählen, `Esc` schließen)
+- **Auswahl**: Häkchen auf jeder Kachel, mit gedrückter Umschalttaste ein ganzer
+  Bereich, „Alle im Filter auswählen" für den gerade aktiven Filter. Die Auswahl
+  wird nach Pfad gehalten und übersteht einen Filterwechsel.
 
 Zwei Entscheidungen, die dort bewusst so sind:
 
@@ -174,6 +178,50 @@ Dateidatum getrennt aus.
 Das UI wird **allein aus `export-manifest.json`** erzeugt. Es liest die
 Threema-Datenbank nicht erneut, und `msgx ui` lässt sich jederzeit erneut
 aufrufen, ohne neu zu extrahieren.
+
+### Ausgewählte Dateien herausholen
+
+Die Auswahl im UI führt über einen Dialog zu diesem Ablauf:
+
+```bash
+pbpaste | msgx collect \
+    --output "~/messenger-extract/export/threema" \
+    --target ~/Auswahl \
+    --selection -
+```
+
+Der Dialog zeigt den fertigen Befehl mit deinen Pfaden und kopiert die Liste
+der ausgewählten Pfade in die Zwischenablage. `--selection -` liest sie von der
+Standardeingabe; alternativ nimmt `--selection DATEI` eine Textdatei mit einem
+relativen Pfad je Zeile (Leerzeilen und `#`-Kommentare werden übergangen).
+
+| Option | Wirkung |
+|---|---|
+| `--no-hardlinks` | Kopien statt Hardlinks — nötig, wenn du die Sammlung weitergeben willst |
+| `--keep-structure` | Verzeichnisstruktur des Exports beibehalten statt flach zu sammeln |
+| `--verify` | SHA-256 jeder Datei gegen das Export-Manifest prüfen |
+| `--dry-run` | zeigt nur an, was gesammelt würde |
+
+#### Warum das nicht der Browser macht
+
+Ein „Als ZIP herunterladen"-Knopf ist auf einer `file://`-Seite **nicht
+möglich**. Am echten Export gemessen:
+
+```
+fetch:            BLOCKIERT (TypeError: Failed to fetch)
+XMLHttpRequest:   BLOCKIERT
+<img> anzeigen:   OK
+canvas auslesen:  BLOCKIERT (SecurityError — tainted canvas)
+```
+
+JavaScript darf lokale Dateien **anzeigen**, ihre Bytes aber nicht lesen — es
+ist dieselbe Same-Origin-Regel, die auch das Einbetten des Index nötig macht.
+Ein Knopf, der einen Download verspricht und nichts liefert, wäre schlechter
+als kein Knopf. Deshalb wählt das UI aus und die CLI sammelt ein.
+
+Standardmäßig entstehen **Hardlinks**: eine Sammlung von 937 MB belegt keinen
+zusätzlichen Speicher, weil sie auf dieselben Daten zeigt wie der Export. Zum
+Weitergeben `--no-hardlinks` verwenden oder die Sammlung anschließend packen.
 
 ### Prüfen
 

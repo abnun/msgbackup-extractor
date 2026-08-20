@@ -699,3 +699,94 @@ def verify_to_dict(result: object) -> dict[str, Any]:
             for problem in result.problems
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Sammelbericht
+# ---------------------------------------------------------------------------
+
+
+def render_collect_text(result: object) -> str:
+    """Bericht des Einsammelns ausgewaehlter Dateien."""
+    from msgbackup_extractor.extract.collect import CollectOutcome, CollectResult
+
+    assert isinstance(result, CollectResult)
+    out = _TextWriter()
+    out.title(
+        "Auswahl eingesammelt"
+        if not result.problems
+        else "Auswahl eingesammelt (mit Beanstandungen)"
+    )
+
+    out.field("Zielverzeichnis", result.target_dir)
+    out.field("Ablage", "Hardlinks" if result.hardlinked else "Kopien")
+    out.field("Hashes geprueft", "ja" if result.verified else "nein")
+
+    labels = {
+        CollectOutcome.COLLECTED: "Eingesammelt",
+        CollectOutcome.SKIPPED: "Uebersprungen",
+        CollectOutcome.UNKNOWN: "Nicht im Export",
+        CollectOutcome.MISSING: "Datei fehlt",
+        CollectOutcome.CORRUPT: "Hash weicht ab",
+        CollectOutcome.FAILED: "Fehlgeschlagen",
+    }
+    out.lines(
+        "Ergebnis",
+        [
+            f"{label:20} {format_count(result.count(outcome)):>8}"
+            for outcome, label in labels.items()
+            if result.count(outcome)
+        ],
+    )
+    out.field("Datenmenge", format_size(result.total_bytes))
+
+    if result.hardlinked and result.collected:
+        out.raw(
+            f"\n{INDENT}Die Dateien sind per Hardlink mit dem Export verbunden und\n"
+            f"{INDENT}belegen keinen zusaetzlichen Speicher. Zum Weitergeben mit\n"
+            f"{INDENT}--no-hardlinks sammeln oder die Sammlung packen.\n"
+        )
+
+    if result.problems:
+        out.section("Beanstandungen")
+        for problem in result.problems[:50]:
+            out.raw(
+                f"\n{INDENT}{labels[problem.outcome]}: {problem.source}"
+                + (f" ({problem.error})" if problem.error else "")
+                + "\n"
+            )
+        if len(result.problems) > 50:
+            out.raw(f"\n{INDENT}... und {len(result.problems) - 50} weitere\n")
+
+    return out.value()
+
+
+def collect_to_dict(result: object) -> dict[str, Any]:
+    """Sammelbericht als JSON-taugliche Struktur."""
+    from msgbackup_extractor.extract.collect import CollectOutcome, CollectResult
+
+    assert isinstance(result, CollectResult)
+    return {
+        "tool": "msgbackup-extractor",
+        "report_type": "collection",
+        "target_dir": str(result.target_dir),
+        "hardlinked": result.hardlinked,
+        "verified": result.verified,
+        "counts": {
+            outcome.value: result.count(outcome)
+            for outcome in CollectOutcome
+            if result.count(outcome)
+        },
+        "total_bytes": result.total_bytes,
+        "files": [
+            {
+                "source": f.source,
+                "target": f.target,
+                "outcome": f.outcome.value,
+                "size": f.size,
+                "sha256": f.sha256,
+                "error": f.error,
+            }
+            for f in result.files
+        ],
+    }
