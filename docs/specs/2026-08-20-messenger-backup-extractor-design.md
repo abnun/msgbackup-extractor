@@ -1296,3 +1296,77 @@ das `@` liefert `.mail-at::before` aus dem CSS, damit ein Adressensammler im
 Quelltext keine vollständige Adresse findet. Diese Regel und `.container` muss
 jedes Ersatz-Stylesheet behalten; es steht als Kommentar in der Datei und in
 `website/README.md`.
+
+---
+
+## 29. Keine Zahlen über den Bestand des Autors
+
+Die README zeigte eine Ergebnistabelle: Gerätemodell, iOS-Version,
+Backup-Größe, Dateizahlen, Byte-Summen, Zuordnungsquoten, Laufzeiten. Als
+Nachweis gedacht. Zusammengenommen ist es ein Profil einer identifizierbaren
+Person — welches iPhone, welche Messenger, wie viele Medien, wie viele Chats,
+wie viele Nachrichten — und über Impressum und Commit-Metadaten hängt es am
+Klarnamen. Bei einem Werkzeug, dessen Zweck der Schutz privater
+Nachrichtendaten ist, war das der falsche Nachweis.
+
+### 29.1 Die Regel
+
+**Zahlen über das Werkzeug bleiben, Zahlen über die Daten und das Gerät des
+Autors gehen.**
+
+| Bleibt | Geht |
+|---|---|
+| 26 bzw. 18 Tabellen im Schema | Größe dieser Datenbanken |
+| „`ZIMAGEDATA.ZMESSAGE` ist vollständig verwaist" | wie viele Zeilen das sind |
+| Vorschaubildgrößen der Messenger (Median 73 px, 384 px) | wie viele Vorschaubilder es gab |
+| 4.096 Byte Leselänge, 16 Byte SQLite-Signatur | wie viele Dateien so gelesen wurden |
+| 0 Fehler, 0 Integritätsfehler | wie viele Dateien insgesamt |
+| „über 90 % zugeordnet" | 93,0 % und 91,1 % |
+
+Die linke Spalte beschreibt Apps, Formate und dieses Programm. Die rechte
+beschreibt einen Menschen.
+
+Stückzahlen wurden dabei meist zu **Vollständigkeitsaussagen**, und die sind
+sogar die bessere Aussage: „jede Referenz löst auf" trägt dasselbe Argument wie
+„4.014 von 4.014", nur ohne die Nebenwirkung. Bei der Join-Tabelle in §19.3 war
+die Zahl von Anfang an nebensächlich — die Aussage war die *Richtung*.
+
+### 29.2 Betroffen war mehr als die README
+
+PRODUCT.md, dieses Dokument an rund dreißig Stellen, sowie Docstrings und
+Kommentare in `threema.py`, `whatsapp.py`, `signal.py`, `analysis.py`,
+`manifest.py`, `runner.py`, `builder.py`. Am deutlichsten in `whatsapp.py`, wo
+die Zahl der Nachrichten, Medieneinträge und Chats stand.
+
+### 29.3 Die Historie musste umgeschrieben werden
+
+Ein bereinigter Arbeitsbaum hilft nicht, wenn 21 Commits die Zahlen im
+Dateiinhalt **und in den Commit-Nachrichten** tragen. Umgeschrieben mit
+`filter-branch` über `--tree-filter` und `--msg-filter` gemeinsam; ein reiner
+Baumfilter hätte die Nachrichten stehen lassen.
+
+Danach das Repository gelöscht und neu angelegt, statt zu force-pushen: GitHub
+hält verwaiste Commits weiter per direkter SHA-URL abrufbar. Nur mit dem
+Objektspeicher verschwinden sie wirklich. Vor dem Löschen: 0 Aufrufe, 0 Klone,
+0 Forks in etwa einer Stunde öffentlicher Verfügbarkeit.
+
+**Nebenwirkung, die Nacharbeit kostete.** Der Filter lief über den gesamten
+Baum, also auch über Stellen, die ich vorher nicht von Hand bearbeitet hatte —
+und über zwei, die gar nicht personenbezogen waren: `4.096 Byte` ist die
+Leselänge der Medienerkennung, `1.135 px` der Median der Threema-Originale.
+Beide wiederhergestellt. Ein breites Muster ist beim Redigieren richtig, aber
+es braucht danach einen Blick auf jeden Treffer.
+
+### 29.4 Zwei Lücken im Gate
+
+`scripts/check-sensitive.sh` hätte das nicht gefunden:
+
+1. Es kannte **keine Muster** für Gerätemodell, OS-Version, Datenmengen und
+   Stückzahlen. Jetzt vorhanden.
+2. Es las nur die **Betreffzeile** der Commits (`%s`) statt der vollen
+   Nachricht (`%B`). Genau in den Bodies standen die Zahlen ebenfalls.
+
+Der zweite Punkt ist der lehrreichere: das Gate prüfte etwas, das aussah wie
+„die Commit-Nachricht", und ich hatte es nie daran getestet. Seitdem gibt es
+die Gegenprobe mit gepflanzten Treffern — nicht nur „meldet es nichts", sondern
+„meldet es etwas, wenn etwas da ist".
