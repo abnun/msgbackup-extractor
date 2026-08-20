@@ -1077,3 +1077,28 @@ tragen; ein Test prüft genau diesen Fall.
 **Wirkung.** Threema: [Anzahl entfernt] Kacheln hatten ein zu kleines
 Vorschaubild. Nach der Umstellung, gemessen an einer 146-CSS-Pixel-Kachel bei
 doppelter Pixeldichte: 0 von 24 geprüften Kacheln noch hochskaliert.
+
+
+### 25.1 Eine Messfalle beim Nachprüfen
+
+Der erste Prüflauf meldete „30 von 30 Kacheln noch hochskaliert", obwohl der
+Fix griff. Ursache war die Messgröße, nicht der Code: bei `srcset` mit
+`w`-Deskriptoren meldet `naturalWidth` die **dichte-korrigierte** Größe. Ein
+946 Pixel breites Bild in einer 220-Pixel-Kachel ergibt `naturalWidth` 220 —
+was wie eine Hochskalierung aussieht und das Gegenteil ist.
+
+Die belastbare Messgröße ist `currentSrc`: **welche Datei** hat der Browser
+gewählt. Damit gemessen, an 60 WhatsApp-Kacheln:
+
+| | |
+|---|---|
+| Kacheln mit größerem Original vorhanden | **35 von 35 laden das Original** |
+| Kacheln, von denen nur ein Vorschaubild existiert | 25 von 60, 58–180 px, Median 100 |
+
+### 25.2 Was eine echte Grenze bleibt
+
+Für [Anzahl entfernt] WhatsApp-Einträge liegt im Backup **nur** das Vorschaubild; das
+Original ist nicht enthalten. Diese Kacheln können nicht scharf werden. Sie
+sind als „nur Vorschau" gekennzeichnet, die Einzelansicht nennt die Auflösung
+und erklärt, dass es nichts Schärferes gibt. Eine Unschärfe, deren Grund
+dransteht, ist kein Fehler mehr — eine unerklärte schon.

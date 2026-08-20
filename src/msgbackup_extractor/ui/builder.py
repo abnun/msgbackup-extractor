@@ -87,6 +87,7 @@ class IndexEntry:
     #: einer 200-CSS-Pixel-Kachel auf einem Retina-Display vierfach
     #: hochskaliert - genau die unscharfen Kacheln, die auffielen.
     width: int | None = None
+    height: int | None = None
     preview_width: int | None = None
     #: Zeitstempel der Backupdatei. Bewusst getrennt von `timestamp`: er sagt,
     #: wann das Backup die Datei schrieb, nicht wann der Inhalt entstand. Auf
@@ -118,6 +119,8 @@ class IndexEntry:
             data["g"] = self.messenger
         if self.width:
             data["w"] = self.width
+        if self.height:
+            data["h"] = self.height
         if self.preview_width:
             data["vw"] = self.preview_width
         return data
@@ -265,6 +268,7 @@ def build_index(
                 mismatch=bool(entry.get("extension_mismatch")),
                 messenger=messenger,
                 width=entry.get("width"),
+                height=entry.get("height"),
                 preview_width=preview_width,
             )
         )
@@ -289,6 +293,7 @@ def build_index(
                 mismatch=bool(thumbnail.get("extension_mismatch")),
                 messenger=messenger,
                 width=thumbnail.get("width"),
+                height=thumbnail.get("height"),
                 preview_width=thumbnail.get("width"),
             )
         )
