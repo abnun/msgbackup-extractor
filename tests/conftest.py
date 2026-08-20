@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -15,12 +16,15 @@ import pytest
 from msgbackup_extractor.analysis import AnalysisReport, Analyzer
 from msgbackup_extractor.core.backup import AppleBackup
 from msgbackup_extractor.core.session import BackupSession
+from msgbackup_extractor.extract.planner import ExtractOptions
+from msgbackup_extractor.extraction import ExtractionOutcome, Extractor
 from tests.support.backup_builder import (
     BackupFile,
     BuiltBackup,
     build_backup,
     core_data_database,
 )
+from tests.support.threema_fixture import ThreemaFixture, build_threema_store
 
 #: Realistische Datei-Signaturen fuer die Medienerkennung.
 JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
@@ -146,3 +150,71 @@ def analyze(
     """
     with analysis_session(backup, password=password) as session:
         return Analyzer(session, **kwargs).run()  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# Threema-Backup mit echter Core-Data-Struktur
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class ThreemaBackup:
+    """Ein Backup mit Threema-Daten plus die Erwartungswerte des Fixtures."""
+
+    backup: BuiltBackup
+    fixture: ThreemaFixture
+
+    @property
+    def path(self) -> Path:
+        return self.backup.path
+
+
+def _build_threema_backup(destination: Path, *, password: str | None = None) -> ThreemaBackup:
+    fixture = build_threema_store()
+    backup = build_backup(
+        destination,
+        fixture.backup_files(),
+        password=password,
+        installed_applications=[THREEMA_BUNDLE_ID],
+        application_versions={THREEMA_BUNDLE_ID: "73046.0"},
+    )
+    return ThreemaBackup(backup=backup, fixture=fixture)
+
+
+@pytest.fixture
+def threema_backup(tmp_path: Path) -> ThreemaBackup:
+    """Unverschluesseltes Backup mit vollstaendiger Threema-Struktur."""
+    return _build_threema_backup(tmp_path / "threema")
+
+
+@pytest.fixture
+def encrypted_threema_backup(tmp_path: Path) -> ThreemaBackup:
+    """Verschluesseltes Backup mit vollstaendiger Threema-Struktur."""
+    return _build_threema_backup(tmp_path / "threema-enc", password=TEST_PASSWORD)
+
+
+@contextmanager
+def extraction_session(
+    target: ThreemaBackup, *, password: str | None = None
+) -> Iterator[BackupSession]:
+    provider = (lambda: password) if password is not None else None
+    with BackupSession(AppleBackup(target.path), password_provider=provider) as session:
+        yield session
+
+
+def extract(
+    target: ThreemaBackup,
+    output_dir: Path,
+    *,
+    password: str | None = None,
+    options: ExtractOptions | None = None,
+    **kwargs: object,
+) -> ExtractionOutcome:
+    """Fuehrt eine Extraktion aus und gibt das Ergebnis zurueck."""
+    with extraction_session(target, password=password) as session:
+        return Extractor(
+            session=session,
+            output_dir=output_dir,
+            options=options or ExtractOptions(),
+            **kwargs,  # type: ignore[arg-type]
+        ).run()

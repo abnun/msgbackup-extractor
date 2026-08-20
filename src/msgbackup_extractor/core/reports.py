@@ -16,7 +16,7 @@ from datetime import datetime
 from enum import Enum
 from io import StringIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from msgbackup_extractor.analysis import AnalysisReport, AppReport
 from msgbackup_extractor.models import DetectionStatus, TableSchema
@@ -468,3 +468,234 @@ def render_diagnostics_text(message: str, diagnostics: dict[str, Any]) -> str:
         "Annahmen zu liefern. Bitte diesen Bericht der Fehlermeldung beilegen.\n"
     )
     return out.value()
+
+
+# ---------------------------------------------------------------------------
+# Extraktionsbericht
+# ---------------------------------------------------------------------------
+
+_CATEGORY_LABELS: Final[dict[str, str]] = {
+    "image": "Bilder",
+    "video": "Videos",
+    "audio": "Audio",
+    "document": "Dokumente",
+    "archive": "Archive",
+    "database": "Datenbanken",
+    "other": "Sonstige",
+}
+
+_OUTCOME_LABELS: Final[dict[str, str]] = {
+    "extracted": "Extrahiert",
+    "skipped": "Uebersprungen",
+    "duplicate": "Duplikate",
+    "failed": "Fehlgeschlagen",
+    "undecryptable": "Nicht entschluesselbar",
+    "missing": "Quelle fehlt",
+    "integrity_error": "Integritaetsfehler",
+}
+
+
+def render_dry_run_text(outcome: object) -> str:
+    """Bericht eines Probelaufs. Es wird nichts geschrieben."""
+    from msgbackup_extractor.extraction import ExtractionOutcome
+
+    assert isinstance(outcome, ExtractionOutcome)
+    plan = outcome.plan
+    out = _TextWriter()
+    out.title("Probelauf (es wird nichts geschrieben)")
+
+    out.field("Messenger", f"{outcome.profile_name} ({outcome.detection.bundle_id})")
+    out.field("Wuerde extrahieren", plural(plan.total_files, "Datei", "Dateien"))
+    out.field("Datenmenge", format_size(plan.total_size))
+
+    counts = plan.counts_per_category()
+    sizes = plan.size_per_category()
+    out.lines(
+        "Nach Kategorie",
+        [
+            f"{_CATEGORY_LABELS.get(category, category):14} {format_count(count):>8}   "
+            f"{format_size(sizes.get(category, 0))}"
+            for category, count in sorted(counts.items(), key=lambda kv: -kv[1])
+        ],
+    )
+
+    thumbnails = sum(1 for f in plan.files if f.item.is_thumbnail)
+    if thumbnails:
+        out.field("davon Vorschaubilder", format_count(thumbnails))
+
+    assigned = sum(1 for f in plan.files if f.item.is_assigned)
+    if outcome.domain_fallback:
+        out.field(
+            "Chat-Zuordnung",
+            "nicht moeglich - Export erfolgt anhand der Domains",
+        )
+    else:
+        out.field(
+            "Chat-Zuordnung",
+            f"{format_count(assigned)} von {format_count(plan.total_files)}, "
+            f"{format_count(plan.total_files - assigned)} nach unassigned/",
+        )
+
+    if plan.missing:
+        out.field("Quelle fehlt im Backup", plural(len(plan.missing), "Datei", "Dateien"))
+    if plan.excluded:
+        out.lines(
+            "Bewusst ausgeschlossen",
+            sorted({reason for _, reason in plan.excluded}),
+        )
+
+    out.blank()
+    out.raw(
+        "Ein Probelauf bildet keine Inhaltshashes - dafuer muesste er die Daten\n"
+        "vollstaendig lesen und waere so teuer wie der echte Lauf. Duplikate\n"
+        "werden daher erst beim echten Export erkannt.\n"
+    )
+    _render_notes(out, outcome)
+    return out.value()
+
+
+def render_extraction_text(outcome: object) -> str:
+    """Abschlussbericht eines echten Laufs."""
+    from msgbackup_extractor.extraction import ExtractionOutcome
+    from msgbackup_extractor.models import FileOutcome
+
+    assert isinstance(outcome, ExtractionOutcome)
+    result = outcome.result
+    out = _TextWriter()
+    out.title("Extraktion abgeschlossen")
+
+    out.field("Messenger", f"{outcome.profile_name} ({outcome.detection.bundle_id})")
+    if result.output_dir is not None:
+        out.field("Ausgabeverzeichnis", result.output_dir)
+
+    rows = [
+        (label, result.count(FileOutcome(value)))
+        for value, label in _OUTCOME_LABELS.items()
+    ]
+    out.lines(
+        "Ergebnis",
+        [f"{label:24} {format_count(count):>8}" for label, count in rows if count],
+    )
+    out.field("Erfolgreich insgesamt", format_count(result.successful))
+    out.field("Fehlgeschlagen insgesamt", format_count(result.failed))
+    out.field("Integritaetsfehler", format_count(result.integrity_errors))
+    out.field("Geschriebene Datenmenge", format_size(result.total_bytes))
+
+    if result.integrity_errors:
+        out.blank()
+        out.raw(
+            "FEHLER: Bei mindestens einer Datei weichen Quell- und Zielhash ab.\n"
+            "Die betroffenen Eintraege stehen im Export-Manifest mit\n"
+            '"integrity_ok": false. Diese Dateien sind nicht verwendbar.\n'
+        )
+
+    _render_notes(out, outcome)
+    return out.value()
+
+
+def _render_notes(out: _TextWriter, outcome: object) -> None:
+    from msgbackup_extractor.extraction import ExtractionOutcome
+
+    assert isinstance(outcome, ExtractionOutcome)
+    if outcome.dangling_references:
+        out.field(
+            "Verweise ohne Datei im Backup",
+            format_count(outcome.dangling_references),
+        )
+    if outcome.notes:
+        out.section("Hinweise")
+        for note in outcome.notes:
+            out.raw(f"\n{INDENT}- {note}\n")
+
+
+# ---------------------------------------------------------------------------
+# Pruefbericht
+# ---------------------------------------------------------------------------
+
+
+def render_verify_text(result: object) -> str:
+    """Bericht der nachtraeglichen Integritaetspruefung."""
+    from msgbackup_extractor.extract.verify import VerifyResult, VerifyStatus
+
+    assert isinstance(result, VerifyResult)
+    out = _TextWriter()
+    out.title("Integritaetspruefung")
+
+    out.field("Manifest", result.manifest.path)
+    out.field("Messenger", result.manifest.app or "unbekannt")
+    out.field("Erstellt", result.manifest.generated_at or "unbekannt")
+    out.field("Geprueft", plural(result.checked, "Datei", "Dateien"))
+
+    labels = {
+        VerifyStatus.OK: "In Ordnung",
+        VerifyStatus.MISSING: "Datei fehlt",
+        VerifyStatus.SIZE_MISMATCH: "Groesse weicht ab",
+        VerifyStatus.HASH_MISMATCH: "Hash weicht ab",
+        VerifyStatus.UNREADABLE: "Nicht lesbar",
+        VerifyStatus.LINK_MISSING: "Verknuepfung fehlt",
+        VerifyStatus.SKIPPED: "Ohne erwartete Datei",
+    }
+    out.lines(
+        "Ergebnis",
+        [
+            f"{label:24} {format_count(result.count(status)):>8}"
+            for status, label in labels.items()
+            if result.count(status)
+        ],
+    )
+
+    if result.is_intact:
+        out.blank()
+        out.raw("Der Export ist unveraendert und vollstaendig.\n")
+        return out.value()
+
+    out.section("Beanstandungen")
+    for problem in result.problems[:50]:
+        out.raw(f"\n{INDENT}{labels[problem.status]}: {problem.output_path}\n")
+        if problem.status is VerifyStatus.HASH_MISMATCH:
+            out.raw(f"{INDENT}{INDENT}erwartet: {problem.expected_sha256}\n")
+            out.raw(f"{INDENT}{INDENT}gefunden: {problem.actual_sha256}\n")
+        elif problem.status is VerifyStatus.SIZE_MISMATCH:
+            out.raw(
+                f"{INDENT}{INDENT}erwartet: {problem.expected_size} Byte, "
+                f"gefunden: {problem.actual_size} Byte\n"
+            )
+        elif problem.missing_links:
+            for link in problem.missing_links:
+                out.raw(f"{INDENT}{INDENT}fehlende Verknuepfung: {link}\n")
+    if len(result.problems) > 50:
+        out.raw(f"\n{INDENT}... und {len(result.problems) - 50} weitere\n")
+    return out.value()
+
+
+def verify_to_dict(result: object) -> dict[str, Any]:
+    """Pruefbericht als JSON-taugliche Struktur."""
+    from msgbackup_extractor.extract.verify import VerifyResult, VerifyStatus
+
+    assert isinstance(result, VerifyResult)
+    return {
+        "tool": "msgbackup-extractor",
+        "report_type": "verification",
+        "manifest": str(result.manifest.path),
+        "app": result.manifest.app,
+        "backup_udid": result.manifest.backup_udid,
+        "checked": result.checked,
+        "intact": result.is_intact,
+        "counts": {
+            status.value: result.count(status)
+            for status in VerifyStatus
+            if result.count(status)
+        },
+        "problems": [
+            {
+                "output_path": problem.output_path,
+                "status": problem.status.value,
+                "expected_sha256": problem.expected_sha256,
+                "actual_sha256": problem.actual_sha256,
+                "expected_size": problem.expected_size,
+                "actual_size": problem.actual_size,
+                "missing_links": list(problem.missing_links),
+            }
+            for problem in result.problems
+        ],
+    }

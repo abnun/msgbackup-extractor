@@ -31,6 +31,8 @@ from msgbackup_extractor.models import (
     DetectionStatus,
     DomainMatch,
     ManifestEntry,
+    MediaItem,
+    TableSchema,
 )
 
 #: Praefixe, mit denen iOS App-Domains im Backup benennt.
@@ -79,14 +81,36 @@ class DatabaseRole:
 
 
 @dataclass(frozen=True, slots=True)
-class ChatAssignment:
-    """Zuordnung einer Datei zu einem Chat - nur bei belegbarer Verknuepfung."""
+class MediaContext:
+    """Alles, was ein Profil braucht, um Medien aufzuzaehlen."""
 
-    file_id: str
-    chat_name: str
-    chat_id: str
-    #: Woran die Zuordnung haengt, z.B. "messages.media_id -> media.id".
-    evidence: str
+    #: Read-only-Verbindung zur App-Datenbank.
+    connection: sqlite3.Connection
+    #: Schema der App-Datenbank, damit das Profil nichts voraussetzen muss.
+    schemas: dict[str, TableSchema]
+    #: Dateiname im externen Blob-Verzeichnis -> Manifest-Eintrag.
+    #: Damit loest ein Profil eine Blob-Referenz auf eine Backupdatei auf.
+    external_files: dict[str, ManifestEntry]
+    #: Alle Manifest-Eintraege der App, nach relativem Pfad.
+    entries_by_path: dict[str, ManifestEntry]
+
+
+@dataclass(frozen=True, slots=True)
+class MediaEnumeration:
+    """Ergebnis von `AppProfile.enumerate_media()`."""
+
+    items: tuple[MediaItem, ...] = ()
+    #: Referenzen, die auf keine Datei im Backup zeigen.
+    dangling_references: int = 0
+    #: Menschenlesbare Hinweise fuer den Bericht.
+    notes: tuple[str, ...] = ()
+    #: Gesetzt, wenn das Schema nicht unterstuetzt wird. Dann ist `items` leer
+    #: und der Aufrufer erzeugt einen Diagnosebericht statt zu raten.
+    unsupported_reason: str | None = None
+
+    @property
+    def is_supported(self) -> bool:
+        return self.unsupported_reason is None
 
 
 class AppProfile(ABC):
@@ -217,18 +241,41 @@ class AppProfile(ABC):
         Diagnosebericht aussagekraeftig bleibt.
         """
 
-    def link_media(
-        self,
-        connection: sqlite3.Connection,
-        entries: tuple[ManifestEntry, ...],
-    ) -> tuple[ChatAssignment, ...]:
-        """Ordnet Medien Chats zu - nur bei belegbarer Verknuepfung.
+    def enumerate_media(self, context: MediaContext) -> MediaEnumeration:
+        """Zaehlt die Medien auf, die die App-Datenbank kennt.
 
-        Die Standardimplementierung ordnet nichts zu. Ein Profil ueberschreibt
-        das erst, wenn das Schema der App bekannt und belegt ist. Alles, was
-        hier nicht zurueckkommt, landet im Export unter `unassigned/`.
+        Hier entsteht die Verbindung zwischen Datenbank und Dateien: welche
+        Blobs es gibt, wo ihr Inhalt liegt (Datei im Backup oder inline in der
+        Datenbank), zu welchem Chat sie gehoeren, wie sie im Original hiessen
+        und wann sie entstanden sind.
+
+        Die Standardimplementierung zaehlt nichts auf. Ein Profil ueberschreibt
+        sie erst, wenn das Schema der App vermessen und belegt ist - nicht auf
+        Grundlage von Vermutungen. Ohne Ueberschreibung faellt der Export auf
+        die reine Dateiauswahl anhand der Domains zurueck.
         """
+        return MediaEnumeration(
+            unsupported_reason=(
+                f"Fuer {self.name} ist keine Medien-Zuordnung implementiert. "
+                "Der Export erfolgt anhand der Domains, ohne Chat-Struktur."
+            )
+        )
+
+    def requires_tables(self) -> tuple[str, ...]:
+        """Tabellen, ohne die `enumerate_media()` nicht arbeiten kann."""
         return ()
+
+    def supports_schema(self, schemas: dict[str, TableSchema]) -> str | None:
+        """Prueft das Schema. Gibt None zurueck, wenn es traegt, sonst den Grund."""
+        available = {name.upper() for name in schemas}
+        missing = [t for t in self.requires_tables() if t.upper() not in available]
+        if missing:
+            return (
+                f"In der Datenbank fehlen die Tabellen {', '.join(missing)}. "
+                f"Vorhanden sind {len(schemas)} Tabellen. Ohne diese ist keine "
+                "Zuordnung von Medien zu Chats moeglich."
+            )
+        return None
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(slug={self.slug!r})"

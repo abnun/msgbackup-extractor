@@ -10,7 +10,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 # ---------------------------------------------------------------------------
 # Medien
@@ -227,3 +227,249 @@ class DetectionResult:
     @property
     def is_confirmed(self) -> bool:
         return self.status is DetectionStatus.CONFIRMED
+
+
+# ---------------------------------------------------------------------------
+# Extraktion
+# ---------------------------------------------------------------------------
+
+
+class SourceKind(enum.StrEnum):
+    """Woher der Inhalt einer zu exportierenden Datei kommt.
+
+    Der Unterschied ist wesentlich und nicht bloss technisch: Messenger auf iOS
+    speichern Medien teils als Datei im Backup, teils als Blob **in** ihrer
+    Datenbank. Ein Extractor, der nur Dateien kopiert, verliert die Inline-Blobs
+    stillschweigend und meldet trotzdem Erfolg.
+    """
+
+    #: Eine Datei im Backup, adressiert ueber ihre fileID.
+    EXTERNAL_FILE = "external_file"
+    #: Ein BLOB-Wert in einer Tabelle der App-Datenbank.
+    INLINE_BLOB = "inline_blob"
+
+
+@dataclass(frozen=True, slots=True)
+class MediaSource:
+    """Adresse des Inhalts, je nach `kind` unterschiedlich befuellt."""
+
+    kind: SourceKind
+    #: Bei EXTERNAL_FILE: die fileID im Backup.
+    file_id: str | None = None
+    #: Bei EXTERNAL_FILE: Domain und relativer Pfad, fuer Bericht und Manifest.
+    domain: str | None = None
+    relative_path: str | None = None
+    #: Bei INLINE_BLOB: Tabelle, Primaerschluessel und Spalte in der App-DB.
+    table: str | None = None
+    row_id: int | None = None
+    column: str | None = None
+    #: Bytes am Anfang des Blobs, die nicht zum Inhalt gehoeren.
+    #: Core Data stellt Inline-Daten ein Markierungsbyte voran; ohne dieses
+    #: Abschneiden waere jede exportierte Datei um ein Byte verschoben und
+    #: damit unbrauchbar. Welcher Wert richtig ist, weiss das App-Profil.
+    byte_offset: int = 0
+
+    @property
+    def is_external(self) -> bool:
+        return self.kind is SourceKind.EXTERNAL_FILE
+
+    def identity(self) -> str:
+        """Eindeutige, stabile Kennung dieser Quelle - fuer Deduplizierung."""
+        if self.is_external:
+            return f"file:{self.file_id}"
+        return f"blob:{self.table}:{self.row_id}:{self.column}"
+
+
+@dataclass(frozen=True, slots=True)
+class ChatReference:
+    """Ein Chat, dem Medien zugeordnet werden koennen."""
+
+    #: Stabile ID aus der App-Datenbank (z.B. der Primaerschluessel).
+    chat_id: str
+    #: Anzeigename. None, wenn kein Name belegbar ist.
+    name: str | None
+    #: "group", "direct" oder "unknown".
+    kind: str = "unknown"
+
+    @property
+    def display_name(self) -> str:
+        """Verzeichnistauglicher Name. Ohne belegbaren Namen die ID."""
+        return self.name or f"chat-{self.chat_id}"
+
+
+@dataclass(frozen=True, slots=True)
+class MediaItem:
+    """Ein Medium, das die App-Datenbank kennt - Kandidat fuer den Export.
+
+    Alle Metadaten hier stammen aus der Datenbank oder dem Manifest. Was dort
+    nicht steht, bleibt `None`; es wird nichts erfunden.
+    """
+
+    source: MediaSource
+    #: Groesse in Byte, soweit bekannt.
+    size: int | None = None
+    #: Zugeordneter Chat. None bedeutet: nicht belegbar -> `unassigned/`.
+    chat: ChatReference | None = None
+    #: Originaldateiname aus der Datenbank, falls vorhanden.
+    original_filename: str | None = None
+    #: Zeitstempel der zugehoerigen Nachricht.
+    timestamp: datetime | None = None
+    #: Von der App angegebener MIME-Type. Die Signaturerkennung hat Vorrang.
+    declared_mime: str | None = None
+    #: True, wenn dies ein Vorschaubild und nicht das Original ist.
+    is_thumbnail: bool = False
+    #: Kennung des Originals, zu dem dieses Thumbnail gehoert.
+    thumbnail_of: str | None = None
+    #: Primaerschluessel der Nachricht, ueber die zugeordnet wurde.
+    message_id: str | None = None
+    #: Welche Join-Kette die Zuordnung belegt - fuer Nachvollziehbarkeit.
+    evidence: str | None = None
+
+    @property
+    def is_assigned(self) -> bool:
+        return self.chat is not None
+
+
+class FileOutcome(enum.StrEnum):
+    """Ergebnis der Verarbeitung einer einzelnen Datei."""
+
+    EXTRACTED = "extracted"
+    #: Bereits vorhanden und inhaltsgleich, deshalb uebersprungen.
+    SKIPPED = "skipped"
+    #: Als Duplikat erkannt; mit --deduplicate nicht erneut geschrieben.
+    DUPLICATE = "duplicate"
+    FAILED = "failed"
+    #: Verschluesselt, aber kein Schluessel verfuegbar.
+    UNDECRYPTABLE = "undecryptable"
+    #: Quelle im Backup nicht vorhanden.
+    MISSING = "missing"
+    #: Geschrieben, aber Quell- und Zielhash weichen ab.
+    INTEGRITY_ERROR = "integrity_error"
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedFile:
+    """Eine geplante Ausgabedatei. Enthaelt alles, was der Runner braucht.
+
+    Der Plan ist rein rechnerisch: er entsteht ohne Schreibzugriff und ist damit
+    die gemeinsame Grundlage von `--dry-run` und dem echten Lauf. Beides laeuft
+    dadurch durch dieselbe Logik, statt zwei Codepfade zu sein.
+    """
+
+    item: MediaItem
+    #: Zielpfad relativ zum Ausgabeverzeichnis.
+    output_path: PurePosixPath
+    #: Zusaetzliche Pfade, die auf denselben Inhalt zeigen (Chat-Struktur).
+    link_paths: tuple[PurePosixPath, ...] = ()
+    media_type: MediaType | None = None
+    #: Manifest-Eintrag der Quelldatei, nur bei externen Quellen.
+    entry: ManifestEntry | None = None
+
+    @property
+    def category(self) -> MediaCategory:
+        return self.media_type.category if self.media_type else MediaCategory.OTHER
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractionPlan:
+    """Was ein Extraktionslauf tun wuerde."""
+
+    files: tuple[PlannedFile, ...]
+    #: Dateien, die bewusst nicht exportiert werden, mit Begruendung.
+    excluded: tuple[tuple[MediaItem, str], ...] = ()
+    #: Medien, die die Datenbank kennt, deren Quelle aber fehlt.
+    missing: tuple[MediaItem, ...] = ()
+
+    @property
+    def total_files(self) -> int:
+        return len(self.files)
+
+    @property
+    def total_size(self) -> int:
+        return sum(f.item.size or 0 for f in self.files)
+
+    def counts_per_category(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for planned in self.files:
+            key = planned.category.value
+            counts[key] = counts.get(key, 0) + 1
+        return counts
+
+    def size_per_category(self) -> dict[str, int]:
+        sizes: dict[str, int] = {}
+        for planned in self.files:
+            key = planned.category.value
+            sizes[key] = sizes.get(key, 0) + (planned.item.size or 0)
+        return sizes
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractedFile:
+    """Ergebnis fuer eine verarbeitete Datei - ein Eintrag im Export-Manifest."""
+
+    outcome: FileOutcome
+    source_kind: SourceKind
+    output_path: str | None
+    link_paths: tuple[str, ...] = ()
+    size: int | None = None
+    sha256: str | None = None
+    media_type: str | None = None
+    detection_method: str | None = None
+    extension_mismatch: bool = False
+    #: Quellangaben - Pfade nur, soweit sie fuer die Nachvollziehbarkeit noetig sind.
+    source_file_id: str | None = None
+    source_domain: str | None = None
+    source_table: str | None = None
+    source_row_id: int | None = None
+    chat_name: str | None = None
+    chat_id: str | None = None
+    original_filename: str | None = None
+    timestamp: datetime | None = None
+    is_thumbnail: bool = False
+    thumbnail_of: str | None = None
+    #: Kennung der behaltenen Datei, wenn dies ein Duplikat ist.
+    duplicate_of: str | None = None
+    integrity_ok: bool | None = None
+    #: Fehlerklasse, nie eine Nachricht mit Inhalt.
+    error: str | None = None
+
+    @property
+    def is_success(self) -> bool:
+        return self.outcome in (
+            FileOutcome.EXTRACTED,
+            FileOutcome.SKIPPED,
+            FileOutcome.DUPLICATE,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractionResult:
+    """Gesamtergebnis eines Laufs."""
+
+    files: tuple[ExtractedFile, ...]
+    dry_run: bool = False
+    output_dir: Path | None = None
+
+    def count(self, outcome: FileOutcome) -> int:
+        return sum(1 for f in self.files if f.outcome is outcome)
+
+    @property
+    def successful(self) -> int:
+        return sum(1 for f in self.files if f.is_success)
+
+    @property
+    def failed(self) -> int:
+        return sum(
+            1
+            for f in self.files
+            if f.outcome
+            in (FileOutcome.FAILED, FileOutcome.MISSING, FileOutcome.UNDECRYPTABLE)
+        )
+
+    @property
+    def integrity_errors(self) -> int:
+        return self.count(FileOutcome.INTEGRITY_ERROR)
+
+    @property
+    def total_bytes(self) -> int:
+        return sum(f.size or 0 for f in self.files if f.is_success)

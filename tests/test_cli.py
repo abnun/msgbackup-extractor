@@ -10,13 +10,17 @@ import pytest
 from msgbackup_extractor.cli import (
     EXIT_DIAGNOSTICS,
     EXIT_ERROR,
-    EXIT_NOT_IMPLEMENTED,
     EXIT_OK,
     EXIT_USAGE,
     build_parser,
     main,
 )
-from tests.conftest import TEST_PASSWORD, THREEMA_BUNDLE_ID, sample_files
+from tests.conftest import (
+    TEST_PASSWORD,
+    THREEMA_BUNDLE_ID,
+    ThreemaBackup,
+    sample_files,
+)
 from tests.support.backup_builder import UNKNOWN_SCHEMA, BuiltBackup, build_backup
 
 # ---------------------------------------------------------------------------
@@ -311,33 +315,177 @@ def test_backups_explains_how_to_create_one(
 # ---------------------------------------------------------------------------
 
 
-def test_extract_says_it_is_not_implemented(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["extract", "--backup", "/tmp", "--output", "/tmp/out"]) == EXIT_NOT_IMPLEMENTED
-    assert "noch nicht implementiert" in capsys.readouterr().err
+def test_extract_requires_an_output_directory(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        main(["extract", "--backup", "/tmp"])
+    assert "--output" in capsys.readouterr().err
 
 
-def test_extract_refuses_cloud_output_before_anything_else(
+def test_extract_refuses_cloud_output_before_touching_the_backup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Der Cloud-Guard greift, bevor irgendetwas gelesen wird."""
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     target = tmp_path / "Library/Mobile Documents/com~apple~CloudDocs/Export"
     target.mkdir(parents=True)
     assert main(["extract", "--backup", "/tmp", "--output", str(target)]) == EXIT_ERROR
-    assert "iCloud Drive" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "iCloud Drive" in error
+    assert "--allow-cloud-output" in error
 
 
-def test_extract_cloud_output_can_be_forced(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_extract_writes_export_and_manifest(
+    threema_backup: ThreemaBackup, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-    target = tmp_path / "Dropbox/Export"
-    target.mkdir(parents=True)
+    output = tmp_path / "export"
     assert main([
-        "extract", "--backup", "/tmp", "--output", str(target), "--allow-cloud-output",
-    ]) == EXIT_NOT_IMPLEMENTED
+        "extract", "--backup", str(threema_backup.path), "--output", str(output),
+    ]) == EXIT_OK
+    captured = capsys.readouterr()
+    assert "Extraktion abgeschlossen" in captured.out
+    assert (output / "export-manifest.json").is_file()
+    assert (output / "reports" / "extraction-report.json").is_file()
+    assert (output / "media").is_dir()
+
+
+def test_extract_dry_run_writes_nothing(
+    threema_backup: ThreemaBackup, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output = tmp_path / "export"
+    assert main([
+        "extract", "--backup", str(threema_backup.path), "--output", str(output),
+        "--dry-run",
+    ]) == EXIT_OK
+    captured = capsys.readouterr()
+    assert "Probelauf" in captured.out
+    assert "Wuerde extrahieren" in captured.out
+    assert not output.exists() or not list(output.rglob("*"))
+
+
+def test_extract_rejects_unknown_type(
+    threema_backup: ThreemaBackup, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main([
+        "extract", "--backup", str(threema_backup.path),
+        "--output", str(tmp_path / "e"), "--types", "bilder",
+    ]) == EXIT_USAGE
+    error = capsys.readouterr().err
+    assert "Unbekannte Kategorien" in error
+    assert "image" in error, "Die Meldung muss die gueltigen Werte nennen"
+
+
+def test_systemexit_with_a_message_is_reported_not_crashed(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ein SystemExit mit Text darf nicht durch int() gedreht werden."""
+    import msgbackup_extractor.cli as cli
+
+    def raising(_arguments: object) -> int:
+        raise SystemExit("etwas ist schiefgelaufen")
+
+    monkeypatch.setattr(cli, "_command_backups", raising)
+    assert main(["backups"]) == EXIT_USAGE
+    assert "etwas ist schiefgelaufen" in capsys.readouterr().err
+
+
+def test_extract_of_encrypted_backup_via_cli(
+    encrypted_threema_backup: ThreemaBackup,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": TEST_PASSWORD)
+    output = tmp_path / "export"
+    assert main([
+        "extract", "--backup", str(encrypted_threema_backup.path),
+        "--output", str(output),
+    ]) == EXIT_OK
+    captured = capsys.readouterr()
+    assert TEST_PASSWORD not in captured.out
+    assert TEST_PASSWORD not in captured.err
+    assert (output / "export-manifest.json").is_file()
+
+
+# ---------------------------------------------------------------------------
+# verify
+# ---------------------------------------------------------------------------
+
+
+def test_verify_confirms_an_intact_export(
+    threema_backup: ThreemaBackup, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output = tmp_path / "export"
+    main(["extract", "--backup", str(threema_backup.path), "--output", str(output)])
+    capsys.readouterr()
+    assert main(["verify", "--manifest", str(output)]) == EXIT_OK
+    assert "unveraendert und vollstaendig" in capsys.readouterr().out
+
+
+def test_verify_detects_a_modified_file(
+    threema_backup: ThreemaBackup, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output = tmp_path / "export"
+    main(["extract", "--backup", str(threema_backup.path), "--output", str(output)])
     capsys.readouterr()
 
+    victim = next(p for p in (output / "media").rglob("*") if p.is_file())
+    victim.write_bytes(victim.read_bytes() + b"manipuliert")
 
-def test_verify_says_it_is_not_implemented(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["verify", "--manifest", "/tmp/m.json"]) == EXIT_NOT_IMPLEMENTED
-    assert "noch nicht implementiert" in capsys.readouterr().err
+    assert main(["verify", "--manifest", str(output)]) == EXIT_ERROR
+    assert "Beanstandungen" in capsys.readouterr().out
+
+
+def test_verify_detects_a_deleted_file(
+    threema_backup: ThreemaBackup, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output = tmp_path / "export"
+    main(["extract", "--backup", str(threema_backup.path), "--output", str(output)])
+    capsys.readouterr()
+
+    victim = next(p for p in (output / "media").rglob("*") if p.is_file())
+    victim.unlink()
+
+    assert main(["verify", "--manifest", str(output)]) == EXIT_ERROR
+    assert "Datei fehlt" in capsys.readouterr().out
+
+
+def test_verify_writes_json_report(
+    threema_backup: ThreemaBackup, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output = tmp_path / "export"
+    main(["extract", "--backup", str(threema_backup.path), "--output", str(output)])
+    capsys.readouterr()
+    target = tmp_path / "pruefung.json"
+    assert main(["verify", "--manifest", str(output), "--json", str(target)]) == EXIT_OK
+    capsys.readouterr()
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    assert payload["report_type"] == "verification"
+    assert payload["intact"] is True
+
+
+def test_verify_rejects_a_missing_manifest(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["verify", "--manifest", str(tmp_path / "fehlt.json")]) == EXIT_ERROR
+    assert "keine Datei" in capsys.readouterr().err
+
+
+def test_verify_rejects_a_dry_run_manifest(
+    threema_backup: ThreemaBackup, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ein Probelauf bildet keine Hashes, also ist keine Pruefung moeglich."""
+    from msgbackup_extractor.extract import export_manifest
+    from msgbackup_extractor.models import ExtractionResult
+
+    output = tmp_path / "export"
+    payload = export_manifest.build(
+        ExtractionResult(files=(), dry_run=True),
+        app="threema",
+        backup_udid="TEST",
+        tool_version="0",
+    )
+    export_manifest.write(payload, output)
+    assert main(["verify", "--manifest", str(output)]) == EXIT_ERROR
+    assert "Probelauf" in capsys.readouterr().err

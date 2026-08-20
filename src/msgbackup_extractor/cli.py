@@ -18,6 +18,7 @@ from pathlib import Path
 from msgbackup_extractor import __version__
 from msgbackup_extractor.analysis import AnalysisBlocked, AnalysisReport, Analyzer
 from msgbackup_extractor.apps.registry import profile_slugs
+from msgbackup_extractor.apps.registry import profile_slugs as _profile_slugs  # noqa: F401
 from msgbackup_extractor.core import reports
 from msgbackup_extractor.core.backup import (
     AppleBackup,
@@ -29,13 +30,23 @@ from msgbackup_extractor.core.backup import (
 from msgbackup_extractor.core.encryption import DecryptionError, WrongPasswordError
 from msgbackup_extractor.core.logging_setup import configure_logging
 from msgbackup_extractor.core.manifest import ManifestSchemaError
-from msgbackup_extractor.core.paths import CloudSyncedPathError, require_non_cloud_path
+from msgbackup_extractor.core.paths import (
+    CloudSyncedPathError,
+    OutputGuardError,
+    require_non_cloud_path,
+)
 from msgbackup_extractor.core.session import BackupSession, interactive_password
 from msgbackup_extractor.core.sqlite_ro import (
     NotASQLiteDatabase,
     describe_database,
     open_readonly,
 )
+from msgbackup_extractor.extract import export_manifest
+from msgbackup_extractor.extract.export_manifest import InvalidManifest
+from msgbackup_extractor.extract.planner import ExtractOptions
+from msgbackup_extractor.extract.verify import verify as verify_export
+from msgbackup_extractor.extraction import ExtractionBlocked, Extractor
+from msgbackup_extractor.models import MediaCategory
 
 PROGRAM = "msgx"
 
@@ -187,17 +198,72 @@ def build_parser() -> argparse.ArgumentParser:
 
     extract = subparsers.add_parser(
         "extract",
-        help="Dateien extrahieren (noch nicht implementiert)",
+        help="Messenger-Dateien in ein Ausgabeverzeichnis extrahieren",
+        description=(
+            "Extrahiert die Dateien der erkannten App. Das Backup wird nur "
+            "gelesen; geschrieben wird ausschliesslich in --output."
+        ),
     )
     _add_backup_argument(extract)
     _add_app_arguments(extract)
+    _add_password_argument(extract)
     _add_common_arguments(extract)
-    extract.add_argument("--output", type=Path, metavar="PFAD", help="Ausgabeverzeichnis.")
-    extract.add_argument("--dry-run", action="store_true", help="Schreibt nichts.")
     extract.add_argument(
-        "--organize-by-chat", action="store_true", help="Medien nach Chat gruppieren."
+        "--output",
+        type=Path,
+        metavar="PFAD",
+        required=True,
+        help="Ausgabeverzeichnis. Muss ausserhalb des Backups liegen.",
     )
-    extract.add_argument("--deduplicate", action="store_true", help="Duplikate nur einmal ablegen.")
+    extract.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Zeigt an, was extrahiert wuerde, und schreibt nichts.",
+    )
+    extract.add_argument(
+        "--organize-by-chat",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Legt zusaetzlich eine Struktur nach Chat an. Standardmaessig an; "
+            "die Dateien werden per Hardlink geteilt und belegen keinen "
+            "zusaetzlichen Speicher."
+        ),
+    )
+    extract.add_argument(
+        "--hardlinks",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Teilt Dateien zwischen media/ und chats/ per Hardlink. Mit "
+            "--no-hardlinks werden Kopien angelegt (doppelter Speicherbedarf)."
+        ),
+    )
+    extract.add_argument(
+        "--thumbnails",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Exportiert auch die von der App gespeicherten Vorschaubilder nach "
+            "media/thumbnails/. Nuetzlich fuer eine spaetere Galerieansicht."
+        ),
+    )
+    extract.add_argument(
+        "--deduplicate",
+        action="store_true",
+        help=(
+            "Schreibt inhaltsgleiche Dateien nur einmal. Ohne diese Option "
+            "werden Duplikate exportiert und im Manifest markiert."
+        ),
+    )
+    extract.add_argument(
+        "--types",
+        metavar="LISTE",
+        help=(
+            "Nur diese Kategorien exportieren, kommagetrennt. Moeglich: "
+            + ", ".join(c.value for c in MediaCategory)
+        ),
+    )
     extract.add_argument(
         "--allow-cloud-output",
         action="store_true",
@@ -210,10 +276,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     verify = subparsers.add_parser(
         "verify",
-        help="Export anhand seines Manifests pruefen (noch nicht implementiert)",
+        help="Einen Export anhand seines Manifests pruefen",
+        description=(
+            "Prueft Vorhandensein, Groesse und SHA-256 jeder exportierten Datei. "
+            "Das Backup wird dafuer nicht benoetigt."
+        ),
     )
-    verify.add_argument("--manifest", type=Path, metavar="PFAD", help="export-manifest.json")
-    verify.add_argument("--verbose", action="store_true")
+    verify.add_argument(
+        "--manifest",
+        type=Path,
+        metavar="PFAD",
+        required=True,
+        help="Pfad zu export-manifest.json oder zum Ausgabeverzeichnis.",
+    )
+    verify.add_argument("--verbose", action="store_true", help="Technische Details.")
+    verify.add_argument(
+        "--json", type=Path, metavar="PFAD", dest="json_path",
+        help="Schreibt den Pruefbericht zusaetzlich als JSON.",
+    )
     verify.set_defaults(handler=_command_verify)
 
     return parser
@@ -459,35 +539,125 @@ def _render_database_report(
     return EXIT_OK
 
 
-def _command_extract(arguments: argparse.Namespace) -> int:
-    if arguments.output is not None:
-        try:
-            require_non_cloud_path(
-                arguments.output.expanduser(),
-                purpose="Ausgabeverzeichnis",
-                allow=arguments.allow_cloud_output,
-            )
-        except CloudSyncedPathError as error:
-            print(f"Fehler: {error}", file=sys.stderr)
-            return EXIT_ERROR
+def _parse_categories(value: str | None) -> frozenset[MediaCategory] | None:
+    """Wandelt `--types image,video` in Kategorien um."""
+    if not value:
+        return None
+    known = {category.value: category for category in MediaCategory}
+    selected: set[MediaCategory] = set()
+    unknown: list[str] = []
+    for part in value.split(","):
+        name = part.strip().lower()
+        if not name:
+            continue
+        if name in known:
+            selected.add(known[name])
+        else:
+            unknown.append(name)
+    if unknown:
+        raise SystemExit(
+            f"Unbekannte Kategorien: {', '.join(unknown)}. "
+            f"Moeglich: {', '.join(sorted(known))}"
+        )
+    return frozenset(selected) or None
 
-    print(
-        "Die Extraktion ist noch nicht implementiert.\n\n"
-        "Fertig sind: analyze, database, backups. Die Extraktion folgt, sobald "
-        "die Analyse\ngegen ein echtes Backup geprueft wurde - so wird sie gegen "
-        "die tatsaechlich\nvorgefundene Struktur gebaut und nicht gegen Annahmen.",
-        file=sys.stderr,
+
+def _command_extract(arguments: argparse.Namespace) -> int:
+    output_dir = arguments.output.expanduser()
+    try:
+        require_non_cloud_path(
+            output_dir, purpose="Ausgabeverzeichnis", allow=arguments.allow_cloud_output
+        )
+    except CloudSyncedPathError as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    categories = _parse_categories(arguments.types)
+    options = ExtractOptions(
+        include_thumbnails=arguments.thumbnails,
+        organize_by_chat=arguments.organize_by_chat,
+        hardlinks=arguments.hardlinks,
+        deduplicate=arguments.deduplicate,
+        dry_run=arguments.dry_run,
+        categories=categories,
     )
-    return EXIT_NOT_IMPLEMENTED
+
+    backup = _resolve_backup(arguments)
+    try:
+        with _open_session(backup, arguments) as session:
+            outcome = Extractor(
+                session=session,
+                output_dir=output_dir,
+                options=options,
+                app_slug=arguments.app,
+                bundle_id=arguments.bundle_id,
+            ).run()
+    except WrongPasswordError as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    except DecryptionError as error:
+        print(f"Fehler bei der Entschluesselung: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    except (ExtractionBlocked, AnalysisBlocked, ManifestSchemaError) as error:
+        diagnostics = getattr(error, "diagnostics", {})
+        print(reports.render_diagnostics_text(str(error), diagnostics), file=sys.stderr)
+        return EXIT_DIAGNOSTICS
+    except OutputGuardError as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if arguments.dry_run:
+        _emit(reports.render_dry_run_text(outcome), None, None)
+        return EXIT_OK
+
+    payload = export_manifest.build(
+        outcome.result,
+        app=outcome.profile_slug,
+        backup_udid=backup.udid,
+        tool_version=__version__,
+    )
+    manifest_path = export_manifest.write(payload, output_dir)
+    report_path = output_dir / "reports" / "extraction-report.json"
+    reports.write_json(payload, report_path)
+
+    text = reports.render_extraction_text(outcome)
+    print(text)
+    print(f"\nExport-Manifest: {manifest_path}", file=sys.stderr)
+    print(f"Bericht:         {report_path}", file=sys.stderr)
+
+    if outcome.result.integrity_errors:
+        return EXIT_ERROR
+    return EXIT_OK
 
 
 def _command_verify(arguments: argparse.Namespace) -> int:
-    print(
-        "Die Pruefung ist noch nicht implementiert; sie setzt ein "
-        "export-manifest.json voraus,\ndas erst die Extraktion erzeugt.",
-        file=sys.stderr,
-    )
-    return EXIT_NOT_IMPLEMENTED
+    path = arguments.manifest.expanduser()
+    if path.is_dir():
+        path = path / export_manifest.MANIFEST_NAME
+
+    try:
+        manifest = export_manifest.load(path)
+    except InvalidManifest as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if manifest.dry_run:
+        print(
+            "Dieses Manifest stammt aus einem Probelauf. Es enthaelt keine "
+            "Inhaltshashes,\ndeshalb ist keine Pruefung moeglich.",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    result = verify_export(manifest)
+    print(reports.render_verify_text(result))
+
+    if arguments.json_path is not None:
+        target = arguments.json_path.expanduser()
+        reports.write_json(reports.verify_to_dict(result), target)
+        print(f"JSON-Bericht geschrieben: {target}", file=sys.stderr)
+
+    return EXIT_OK if result.is_intact else EXIT_ERROR
 
 
 # ---------------------------------------------------------------------------
@@ -511,7 +681,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return int(arguments.handler(arguments))
     except SystemExit as error:
-        return int(error.code or EXIT_OK)
+        # `SystemExit` kann einen Exitcode ODER eine Meldung tragen. Eine
+        # Meldung gehoert nach stderr, nicht durch int() gedreht.
+        code = error.code
+        if code is None:
+            return EXIT_OK
+        if isinstance(code, int):
+            return code
+        print(f"Fehler: {code}", file=sys.stderr)
+        return EXIT_USAGE
     except KeyboardInterrupt:
         print("\nAbgebrochen.", file=sys.stderr)
         return EXIT_ERROR

@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from msgbackup_extractor.apps.base import (
+    AppProfile,
     DatabaseCandidate,
     domain_identifier,
     domain_kind,
@@ -224,6 +225,37 @@ def test_database_without_schema_is_unknown() -> None:
     assert "nicht eingelesen" in roles[0].reason
 
 
-def test_link_media_returns_nothing_until_implemented() -> None:
-    """Bis das echte Schema bekannt ist, wird nichts zugeordnet."""
-    assert ThreemaProfile().link_media(None, ()) == ()  # type: ignore[arg-type]
+def test_default_profile_enumerates_nothing_and_says_why() -> None:
+    """Ein Profil ohne vermessenes Schema ordnet nichts zu - und begruendet das."""
+
+    class Unvermessen(AppProfile):
+        name = "Unvermessen"
+        slug = "unvermessen"
+        bundle_namespaces = ("com.example.",)
+
+        def classify_databases(self, candidates):
+            return ()
+
+    result = Unvermessen().enumerate_media(None)  # type: ignore[arg-type]
+    assert not result.is_supported
+    assert result.items == ()
+    assert "keine Medien-Zuordnung implementiert" in (result.unsupported_reason or "")
+
+
+def test_supports_schema_names_the_missing_tables() -> None:
+    from msgbackup_extractor.models import TableSchema
+
+    schemas = {"ZCONVERSATION": TableSchema(name="ZCONVERSATION", columns=("Z_PK",))}
+    reason = ThreemaProfile().supports_schema(schemas)
+    assert reason is not None
+    assert "ZMESSAGE" in reason
+
+
+def test_supports_schema_accepts_a_complete_schema() -> None:
+    from msgbackup_extractor.models import TableSchema
+
+    schemas = {
+        name: TableSchema(name=name, columns=("Z_PK",))
+        for name in ("ZMESSAGE", "ZCONVERSATION")
+    }
+    assert ThreemaProfile().supports_schema(schemas) is None
