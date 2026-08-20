@@ -1,0 +1,78 @@
+# ---------------------------------------------------------------------------
+# SENSIBLE DATEN - NIEMALS VERSIONIEREN
+# ---------------------------------------------------------------------------
+# Apple-Backups, extrahierte Messenger-Daten, Exporte, Berichte mit Klarnamen.
+# Diese Regeln stehen absichtlich ganz oben und sind absichtlich breit.
+backup/
+backups/
+export/
+exports/
+*-Export/
+*.sqlite
+*.sqlite3
+*.db
+!tests/**/fixtures/**/*.db
+Manifest.db
+Manifest.plist
+Info.plist
+Status.plist
+*.plist
+messenger-extract/
+private/
+scratch/
+
+# Passwoerter / Secrets - duerfen laut Sicherheitsmodell gar nicht existieren,
+# hier trotzdem als zweite Verteidigungslinie.
+.env
+.env.*
+*.secret
+*.key
+*.pem
+credentials*
+
+# Generierte Test-Fixtures (koennen gross sein, sind reproduzierbar)
+tests/fixtures/generated/
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# ---------------------------------------------------------------------------
+# macOS
+# ---------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.DocumentRevisions-V100
+
+# iCloud Drive Platzhalter
+*.icloud
+
+# Editor
+.idea/
+*.swp
+*.swo
