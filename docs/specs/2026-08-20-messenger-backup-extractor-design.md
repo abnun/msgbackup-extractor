@@ -991,3 +991,48 @@ Am echten Export: [Anzahl entfernt] Medien (Threema [Anzahl entfernt] + WhatsApp
 [Menge entfernt] Seite, in 1,[Dauer entfernt] erzeugt. Kontrollrechnung der Facetten:
 [Anzahl entfernt] + [Anzahl entfernt] = [Anzahl entfernt] Bilder, 179 + [Anzahl entfernt] = [Anzahl entfernt] Videos, 24 + 278 = 302
 Chats.
+
+
+---
+
+## 24. Nachtrag: Die Ansicht wird automatisch erzeugt (2026-08-20)
+
+Nach einem Export war die lokale Ansicht veraltet, bis man `msgx ui` von Hand
+aufrief — bei der gemeinsamen Übersicht sogar unbemerkt, weil sie den neuen
+Export gar nicht kannte. `extract` erzeugt sie jetzt selbst.
+
+### 24.1 Der Konflikt mit einer Zusage
+
+Die Seite eines Exports liegt **in** `--output` — unproblematisch. Die
+gemeinsame Übersicht liegt im **Elternverzeichnis** und damit außerhalb.
+Anforderung R8 lautet aber: geschrieben wird ausschließlich in `--output`.
+
+Gelöst über eine Bedingung statt über eine Ausnahme: die Übersicht wird nur
+aktualisiert, wenn dort **schon eine von diesem Programm erzeugte Seite liegt**.
+Dann hat der Nutzer dieses Verzeichnis bereits als Übersichtsort bestimmt, und
+eine Aktualisierung ist erwartet. Eine *neue* Datei außerhalb von `--output`
+anzulegen bleibt ausgeschlossen; stattdessen nennt der Bericht den Befehl.
+
+| Lage im Elternverzeichnis | Verhalten |
+|---|---|
+| eigene `index.html` vorhanden | wird mit aktualisiert |
+| keine `index.html`, aber weitere Exporte | nichts geschrieben, Befehl genannt |
+| fremde `index.html` | unangetastet |
+
+### 24.2 Herkunft erkennen
+
+Die Vorlage trägt `<meta name="generator" content="msgbackup-extractor">`.
+`is_generated_page()` prüft die ersten 4 KB darauf. Eine fremde Datei gleichen
+Namens zu ersetzen wäre Datenverlust, und dafür genügt keine Heuristik über den
+Dateinamen.
+
+Der Fall trat sofort auf: die bestehende Übersicht war vor Einführung der
+Kennung erzeugt worden und wurde deshalb nicht angefasst — richtig, aber es
+braucht einmalig ein `msgx ui`. Das steht in der README.
+
+### 24.3 Ein Fehler hier entwertet den Export nicht
+
+Wenn das Erzeugen der Ansicht scheitert, sind die Dateien längst geschrieben und
+ihre Hashes geprüft. Der Fehler wird deshalb als Hinweis gemeldet und nicht
+geworfen — ein misslungenes HTML darf einen gültigen 14-GB-Export nicht als
+gescheitert erscheinen lassen.

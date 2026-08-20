@@ -326,10 +326,34 @@ Optionen:
 | `--no-thumbnails` | Vorschaubilder nicht exportieren |
 | `--deduplicate` | inhaltsgleiche Dateien nur einmal schreiben |
 | `--types image,video` | nur diese Kategorien |
+| `--no-ui` | die lokale Ansicht **nicht** neu erzeugen |
 | `--allow-cloud-output` | Ausgabe in einem Sync-Ordner erzwingen |
 
-Nach dem Export lohnt `msgx ui` (siehe unten) — damit siehst du das
-Ergebnis, ohne [Anzahl entfernt] Bilder im Finder zu scrollen.
+#### Die Ansicht wird automatisch neu erzeugt
+
+Nach einem erfolgreichen Export schreibt `extract` die `index.html` im
+Ausgabeverzeichnis neu. Du musst `msgx ui` also nicht von Hand aufrufen.
+Abschalten mit `--no-ui`; bei `--dry-run` passiert es ohnehin nicht.
+
+Für die **gemeinsame Übersicht** gilt eine Einschränkung, und die hat einen
+Grund: sie liegt im Elternverzeichnis von `--output` und damit *außerhalb*
+dessen, wohin dieses Programm zugesagt hat zu schreiben. Deshalb:
+
+| Lage im Elternverzeichnis | Was `extract` tut |
+|---|---|
+| dort liegt schon eine von `msgx ui` erzeugte `index.html` | sie wird **mit aktualisiert** — du hast dieses Verzeichnis bereits als Übersichtsort bestimmt |
+| dort liegt **keine** `index.html`, aber weitere Exporte | es wird **nichts** geschrieben; der Bericht nennt den Befehl `msgx ui --output …` |
+| dort liegt eine **fremde** `index.html` | sie bleibt unangetastet — sie zu ersetzen wäre Datenverlust |
+
+Erkannt wird eine eigene Seite an `<meta name="generator"
+content="msgbackup-extractor">` im Dateikopf. Seiten, die mit einer älteren
+Version erzeugt wurden, tragen diese Kennung nicht und werden deshalb nicht
+angefasst; ein einmaliges `msgx ui --output …` bringt sie auf den neuen
+Stand, danach greift die Automatik.
+
+Scheitert das Erzeugen der Ansicht, ist das ein **Hinweis, kein Fehler**: die
+Dateien sind zu diesem Zeitpunkt schon geschrieben und ihre Hashes geprüft.
+Der Export bleibt gültig, und `msgx ui` lässt sich jederzeit nachholen.
 
 ### Ansehen
 
@@ -342,6 +366,11 @@ msgx ui --output "~/messenger-extract/export"
 ```
 
 Erzeugt `index.html`. Doppelklick genügt — es braucht keinen Server.
+
+Nach einem `extract` brauchst du das normalerweise **nicht**: die Ansicht wird
+dabei automatisch neu erzeugt (siehe oben). `msgx ui` von Hand ist nötig, wenn
+du die gemeinsame Übersicht zum ersten Mal anlegst, wenn du `--no-ui` verwendet
+hast, oder wenn du eine Seite aus einer älteren Version auffrischen willst.
 
 Zeigt `--output` auf ein **Exportverzeichnis**, entsteht eine Seite für diesen
 Messenger. Zeigt es auf ein Verzeichnis, das mehrere Exporte enthält, entsteht

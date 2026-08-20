@@ -592,3 +592,147 @@ def test_combined_page_is_still_self_contained(combined_root: Path) -> None:
     html = write_page(_combined(combined_root), combined_root).read_text(encoding="utf-8")
     for marker in ("http://", "https://", "fetch(", "XMLHttpRequest", "download="):
         assert marker not in html
+
+
+# ---------------------------------------------------------------------------
+# Automatisches Auffrischen nach dem Export
+# ---------------------------------------------------------------------------
+
+
+def test_generated_pages_are_recognisable(export_dir: Path) -> None:
+    """Vor dem Ueberschreiben muss klar sein, dass die Datei von uns ist."""
+    from msgbackup_extractor.ui.builder import is_generated_page
+
+    page = write_page(_index(export_dir), export_dir)
+    assert is_generated_page(page)
+
+
+def test_a_foreign_index_is_not_recognised(tmp_path: Path) -> None:
+    """Eine fremde index.html zu ersetzen waere Datenverlust."""
+    from msgbackup_extractor.ui.builder import is_generated_page
+
+    foreign = tmp_path / PAGE_NAME
+    foreign.write_text("<!doctype html><h1>Meine Seite</h1>", encoding="utf-8")
+    assert not is_generated_page(foreign)
+    assert not is_generated_page(tmp_path / "gibt-es-nicht.html")
+
+
+def test_extract_creates_the_page_automatically(
+    threema_backup: ThreemaBackup, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output = tmp_path / "export" / "threema"
+    assert main([
+        "extract", "--backup", str(threema_backup.path), "--output", str(output),
+    ]) == EXIT_OK
+    captured = capsys.readouterr()
+    assert (output / PAGE_NAME).is_file()
+    assert "Ansicht:" in captured.err
+
+
+def test_no_ui_skips_the_page(
+    threema_backup: ThreemaBackup, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output = tmp_path / "export" / "threema"
+    assert main([
+        "extract", "--backup", str(threema_backup.path), "--output", str(output),
+        "--no-ui",
+    ]) == EXIT_OK
+    capsys.readouterr()
+    assert not (output / PAGE_NAME).exists()
+
+
+def test_extract_does_not_create_an_overview_out_of_nowhere(
+    threema_backup: ThreemaBackup, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Eine neue Datei ausserhalb von --output waere ein Bruch der Zusage."""
+    parent = tmp_path / "export"
+    output = parent / "threema"
+    main(["extract", "--backup", str(threema_backup.path), "--output", str(output)])
+    capsys.readouterr()
+    assert not (parent / PAGE_NAME).exists()
+
+
+def test_extract_refreshes_an_existing_overview(
+    threema_backup: ThreemaBackup,
+    whatsapp_backup: WhatsAppBackup,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Liegt schon eine Uebersicht, wird sie mitgezogen - sonst veraltet sie."""
+    from msgbackup_extractor.core.backup import AppleBackup
+    from msgbackup_extractor.core.session import BackupSession
+    from msgbackup_extractor.extraction import Extractor
+
+    parent = tmp_path / "export"
+
+    # Zwei Exporte anlegen und die Uebersicht einmal erzeugen.
+    with BackupSession(AppleBackup(whatsapp_backup.path)) as session:
+        outcome = Extractor(
+            session=session, output_dir=parent / "whatsapp", app_slug="whatsapp"
+        ).run()
+    export_manifest.write(
+        export_manifest.build(
+            outcome.result, app="whatsapp", backup_udid="T", tool_version="0"
+        ),
+        parent / "whatsapp",
+    )
+    main(["extract", "--backup", str(threema_backup.path), "--output", str(parent / "threema")])
+    capsys.readouterr()
+    main(["ui", "--output", str(parent)])
+    capsys.readouterr()
+    overview = parent / PAGE_NAME
+    assert overview.is_file()
+    before = overview.stat().st_mtime_ns
+
+    # Erneuter Export: die Uebersicht muss mitgezogen werden.
+    overview.write_text(
+        overview.read_text(encoding="utf-8").replace("</body>", "<!--alt--></body>"),
+        encoding="utf-8",
+    )
+    main(["extract", "--backup", str(threema_backup.path), "--output", str(parent / "threema")])
+    error = capsys.readouterr().err
+    assert "<!--alt-->" not in overview.read_text(encoding="utf-8")
+    assert str(overview) in error
+    assert overview.stat().st_mtime_ns != before
+
+
+def test_extract_points_at_the_overview_command_when_none_exists(
+    threema_backup: ThreemaBackup,
+    whatsapp_backup: WhatsAppBackup,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Ohne bestehende Uebersicht wird nur der Befehl genannt, nichts geschrieben."""
+    from msgbackup_extractor.core.backup import AppleBackup
+    from msgbackup_extractor.core.session import BackupSession
+    from msgbackup_extractor.extraction import Extractor
+
+    parent = tmp_path / "export"
+    with BackupSession(AppleBackup(whatsapp_backup.path)) as session:
+        outcome = Extractor(
+            session=session, output_dir=parent / "whatsapp", app_slug="whatsapp"
+        ).run()
+    export_manifest.write(
+        export_manifest.build(
+            outcome.result, app="whatsapp", backup_udid="T", tool_version="0"
+        ),
+        parent / "whatsapp",
+    )
+
+    main(["extract", "--backup", str(threema_backup.path), "--output", str(parent / "threema")])
+    error = capsys.readouterr().err
+    assert "weitere Exporte daneben" in error
+    assert "msgx ui --output" in error
+    assert not (parent / PAGE_NAME).exists()
+
+
+def test_dry_run_writes_no_page(
+    threema_backup: ThreemaBackup, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output = tmp_path / "export" / "threema"
+    main([
+        "extract", "--backup", str(threema_backup.path), "--output", str(output),
+        "--dry-run",
+    ])
+    capsys.readouterr()
+    assert not (output / PAGE_NAME).exists()

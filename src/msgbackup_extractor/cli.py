@@ -53,11 +53,14 @@ from msgbackup_extractor.extract.verify import verify as verify_export
 from msgbackup_extractor.extraction import ExtractionBlocked, Extractor
 from msgbackup_extractor.models import MediaCategory
 from msgbackup_extractor.ui.builder import (
+    PAGE_NAME,
     UiBuildError,
     build_combined_index,
     build_index,
     discover_exports,
+    is_generated_page,
     load_raw_manifest,
+    refresh_pages,
     write_page,
 )
 
@@ -275,6 +278,17 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Nur diese Kategorien exportieren, kommagetrennt. Moeglich: "
             + ", ".join(c.value for c in MediaCategory)
+        ),
+    )
+    extract.add_argument(
+        "--ui",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Erzeugt nach dem Export die lokale Ansicht neu. Eine gemeinsame "
+            "Uebersicht im Elternverzeichnis wird nur aktualisiert, wenn dort "
+            "schon eine liegt - eine neue Datei ausserhalb von --output "
+            "anzulegen waere ein Bruch der Zusage, nur dorthin zu schreiben."
         ),
     )
     extract.add_argument(
@@ -729,9 +743,48 @@ def _command_extract(arguments: argparse.Namespace) -> int:
     print(f"\nExport-Manifest: {manifest_path}", file=sys.stderr)
     print(f"Bericht:         {report_path}", file=sys.stderr)
 
+    if arguments.ui:
+        _refresh_ui_after_extract(output_dir)
+
     if outcome.result.integrity_errors:
         return EXIT_ERROR
     return EXIT_OK
+
+
+def _refresh_ui_after_extract(output_dir: Path) -> None:
+    """Erzeugt die lokale Ansicht neu und sagt, was geschrieben wurde.
+
+    Ein Fehler hier darf den Export nicht entwerten - die Dateien sind schon
+    geschrieben und geprueft. Deshalb wird er gemeldet, nicht geworfen.
+    """
+    try:
+        written = refresh_pages(output_dir, export_manifest.load, load_raw_manifest)
+    except (UiBuildError, InvalidManifest, OSError) as error:
+        print(
+            f"Hinweis: Die lokale Ansicht konnte nicht erzeugt werden ({error}). "
+            f"Der Export ist davon unberuehrt; mit 'msgx ui --output "
+            f"{output_dir}' erneut versuchen.",
+            file=sys.stderr,
+        )
+        return
+
+    for path in written:
+        print(f"Ansicht:         {path}", file=sys.stderr)
+
+    overview = output_dir.parent / PAGE_NAME
+    if len(written) == 1 and not is_generated_page(overview):
+        others = [
+            ref for ref in discover_exports(output_dir.parent)
+            if ref.directory != output_dir.name
+        ]
+        if others:
+            print(
+                f"\nEs liegen weitere Exporte daneben "
+                f"({', '.join(ref.label for ref in others)}). Eine gemeinsame "
+                f"Ansicht mit Umschaltung entsteht mit:\n"
+                f"    msgx ui --output {output_dir.parent}",
+                file=sys.stderr,
+            )
 
 
 def _command_ui(arguments: argparse.Namespace) -> int:

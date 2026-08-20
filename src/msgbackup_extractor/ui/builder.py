@@ -299,6 +299,54 @@ def build_index(
     }
 
 
+#: Kennzeichen, an dem eine von diesem Programm erzeugte Seite erkennbar ist.
+GENERATOR_MARKER: Final = '<meta name="generator" content="msgbackup-extractor">'
+
+
+def is_generated_page(path: Path) -> bool:
+    """Wurde diese Seite von diesem Programm erzeugt?
+
+    Wird gebraucht, bevor eine bestehende `index.html` ueberschrieben wird. Eine
+    fremde Datei gleichen Namens zu ersetzen waere Datenverlust - der Kopf der
+    Datei genuegt fuer die Entscheidung.
+    """
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            return GENERATOR_MARKER in handle.read(4096)
+    except OSError:
+        return False
+
+
+def refresh_pages(export_dir: Path, loader: Any, raw_loader: Any) -> list[Path]:
+    """Erzeugt die Seite dieses Exports neu, und die Uebersicht falls vorhanden.
+
+    Rueckgabe sind die geschriebenen Pfade.
+
+    Die Uebersicht liegt im **Elternverzeichnis** des Exports und damit
+    ausserhalb von `--output`. Sie wird deshalb nur aktualisiert, wenn dort
+    schon eine von diesem Programm erzeugte Seite liegt: dann hat der Nutzer
+    dieses Verzeichnis bereits als Uebersichtsort bestimmt, und eine
+    Aktualisierung ist erwartet statt ueberraschend. Eine neue Datei ausserhalb
+    von `--output` anzulegen waere ein Bruch der Zusage.
+    """
+    written: list[Path] = []
+
+    manifest_path = export_dir / MANIFEST_NAME
+    index = build_index(loader(manifest_path), raw=raw_loader(manifest_path))
+    written.append(write_page(index, export_dir))
+
+    overview = export_dir.parent / PAGE_NAME
+    if overview.parent == export_dir or not is_generated_page(overview):
+        return written
+
+    exports = discover_exports(export_dir.parent)
+    if len(exports) < 2:
+        return written
+    combined = build_combined_index(exports, loader, raw_loader)
+    written.append(write_page(combined, export_dir.parent))
+    return written
+
+
 def _template() -> str:
     """Liest das HTML-Grundgeruest aus den Paketdaten."""
     try:
