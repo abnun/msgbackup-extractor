@@ -278,13 +278,13 @@ code, .cmd {
 
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.02fr);
+  grid-template-columns: minmax(0, 1.09fr) minmax(0, 0.91fr);
   gap: 1.5rem 2.5rem;
   align-items: center;
   padding: 2.25rem 0 2rem;
 }
 .hero h1 {
-  font-size: clamp(2rem, 4.35vw, 3.9rem);
+  font-size: clamp(1.9rem, 4.05vw, 3.6rem);
   line-height: 0.87;
 }
 .hero h1 span { white-space: nowrap; }

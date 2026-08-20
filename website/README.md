@@ -4,12 +4,24 @@ The GitHub Pages site: a workshop linocut broadside, one ink on cheap manila.
 
 | File | What it is |
 |---|---|
-| `index.html` | the landing page |
+| `index.html` | the landing page, English |
+| `de/index.html` | the same page in German |
 | `impressum.html` | Impressum under § 5 DDG — German, and it has to stay German |
 | `datenschutz.html` | privacy notice under the GDPR — likewise |
 | `styles.css` | the whole visual system, shared by all three pages |
 | `script.js` | assembles the split email address into a clickable link |
 | `fonts/` | Archivo and Archivo Black, self-hosted, with their OFL |
+
+## Two languages, two files
+
+`index.html` is English, `de/index.html` is German. Same world, same structure,
+same section ids — and that means **every content change has to be made twice.**
+There is no template at serve time and there will not be one: this site loads no
+script it does not need. The two pages point at each other through the masthead
+and through `hreflang` alternates, and `x-default` points at the English one.
+
+The German legal pages link back to the German landing page, because a page
+under § 5 DDG addresses German visitors.
 
 ## Rules that must survive any edit
 

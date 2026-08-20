@@ -80,6 +80,14 @@ One idea only: the chisel burst that appears when a button is struck, in three
 steps rather than a smooth ease, because a press either bites or it does not.
 `prefers-reduced-motion` removes it and disables smooth scrolling.
 
+## Both languages share one stylesheet
+
+The English and German pages use identical classes and section ids. The hero's
+type ceiling (`clamp(1.9rem, 4.05vw, 3.6rem)`) and the hero's column split
+(1.09 / 0.91) are set by the **longer** language, so the German line
+„LIEGEN DA DRIN." clears the illustration. Sizing the hero to the English copy
+alone breaks the German page.
+
 ## Rules with teeth
 
 1. **No third-party request, ever** — enforced by a CSP meta on every page.
