@@ -1370,3 +1370,87 @@ Der zweite Punkt ist der lehrreichere: das Gate prüfte etwas, das aussah wie
 „die Commit-Nachricht", und ich hatte es nie daran getestet. Seitdem gibt es
 die Gegenprobe mit gepflanzten Treffern — nicht nur „meldet es nichts", sondern
 „meldet es etwas, wenn etwas da ist".
+
+---
+
+## 30. Das Doppelklick-Bündel
+
+Gewünscht war eine `.app` zum Doppelklicken statt eines Terminals. Zwei
+Anforderungen aus dem Sicherheitsmodell schneiden hier ein und bestimmen, was
+gebaut werden durfte.
+
+### 30.1 Es muss ein Terminal öffnen
+
+Ein verschlüsseltes Backup braucht ein Passwort. Das Passwort darf nicht als
+Argument übergeben werden (Regel 16 und 17), also braucht es `getpass`, also
+braucht es ein Terminal. Die naheliegenden Auswege sind alle schlechter:
+
+| Weg | Warum nicht |
+|---|---|
+| Passwortdialog, dann als Argument weiterreichen | genau das, was verboten ist |
+| Dialog, dann über eine Pipe an stdin | `getpass` liest vom Terminal, nicht von stdin; und das Passwort läge in einem Puffer, den niemand kontrolliert |
+| Aus dem Schlüsselbund holen | speichert das Passwort dauerhaft — Regel 16 |
+| Eigene GUI mit eigener Extraktionslogik | zweiter Codepfad, zweite Wahrheit |
+
+Also ist das Bündel ein **Starter**: `Contents/MacOS/…` ruft
+`open -a Terminal` auf `Contents/Resources/start.command` auf, und dort läuft
+`msgx guide`. Eine stille Oberfläche wäre hier ein Rückschritt, kein
+Fortschritt — sie würde die eine Zusage aufweichen, die das Projekt am
+sorgfältigsten hält.
+
+### 30.2 Der Assistent hat keine eigene Logik
+
+`msgx guide` führt nichts selbst aus. Er stellt Fragen, baut daraus eine
+Befehlszeile, **zeigt sie an** und lässt sie durch denselben Parser und
+dieselben Handler laufen wie ein getippter Befehl.
+
+Das ist nicht Sparsamkeit, sondern die Antwort auf die Frage, was ein Assistent
+in diesem Projekt sein darf. Ein Assistent mit eigener Extraktion hätte alle
+Prüfungen doppelt: Cloud-Wächter, Read-only-Zusage, Hashvergleich,
+Diagnosebericht. Zwei Fassungen davon laufen auseinander, und die zweite wird
+schlechter geprüft.
+
+Der Nebeneffekt ist der bessere Teil: weil jeder Schritt seinen Befehl zeigt,
+**bringt der Assistent das Werkzeug bei, statt es zu verstecken**. Zuletzt nennt
+er den einen Befehl, der beim nächsten Mal genügt. Ein Assistent, den man nach
+zweimal Benutzen weglassen kann, ist besser als einer, der einen bindet.
+
+Ein Passwortargument kann er nicht bauen, weil die Option nicht existiert. Ein
+Test prüft trotzdem, dass er keines erfindet.
+
+### 30.3 Aus Bordmitteln, auch das Symbol
+
+Kein Tauri, kein Electron, kein `py2app` — nichts heruntergeladen, nichts
+installiert. Ein `.app` ist ein Verzeichnis mit `Info.plist`, einem
+ausführbaren Skript und einem Symbol.
+
+Beim Symbol gab es keine Bilderzeugung in dieser Sitzung, also entstehen die
+PNGs in reinem Python: ein kleiner Rasterer (Rundrechteck, Polygon, Kreis), das
+Ganze vierfach gezeichnet und dann gemittelt als Kantenglättung, und ein
+PNG-Schreiber aus `zlib` und `struct`. `iconutil` von macOS macht daraus das
+`.icns`. Der Nachweis, dass die selbst geschriebenen PNGs gültig sind, ist
+genau dieser Aufruf: **`iconutil` akzeptiert sie, und ein Test prüft das.**
+Fehlt `iconutil`, entsteht das Bündel ohne Symbol statt gar nicht.
+
+### 30.4 Der eingesetzte Pfad
+
+Ein Bündel kann nicht wissen, welche virtuelle Umgebung gemeint ist, also wird
+der Pfad zu `msgx` beim Bauen eingesetzt. Das ist eine echte Einschränkung, und
+sie wird nicht versteckt: verschwindet `msgx`, sagt der Starter beim nächsten
+Start, was passiert ist und wie man es behebt. Ein Test löscht `msgx` und prüft
+genau diese Ausgabe.
+
+Ein Pfad mit Leerzeichen, Anführungszeichen, Dollarzeichen oder Apostroph zerlegt
+sonst das Startskript. Geprüft wird das nicht am Text, sondern am Ergebnis: eine
+`/bin/sh` führt die Zuweisung aus und muss denselben Pfad zurückgeben.
+
+### 30.5 Zwei Fehler, die erst der Durchlauf zeigte
+
+Die Schrittnummern liefen falsch: „Schritt 3" kam vor „Schritt 2", weil der
+Messenger vor dem Ausgabeverzeichnis abgefragt wird — der Vorschlagspfad hängt
+daran. Die Reihenfolge war richtig, die Beschriftung nicht.
+
+Und ein Versuch, den Ablauf über `script -q /dev/null` an einem Pseudoterminal
+zu prüfen, schlug fehl, weil `script` die Eingabe selbst schluckt. Geprüft wird
+die Integration deshalb im Prozess: der Assistent mit echten Strömen aus dem
+Speicher und dem **echten** Runner, gegen ein synthetisches Backup.

@@ -297,6 +297,40 @@ therefore offline; an arbitrarily configured sync folder is beyond it.
 
 ## Usage
 
+### Double-click instead of typing
+
+There is a small macOS bundle for people who would rather not open a terminal
+themselves:
+
+```bash
+scripts/build-app.py            # writes msgbackup-extractor.app to ~/Applications
+```
+
+It is built on your machine from what macOS already has — nothing is
+downloaded, no framework is installed. The icon is generated as PNG in pure
+Python and `iconutil` turns it into an `.icns`.
+
+**It opens a Terminal, and that is deliberate.** An encrypted backup needs a
+password, and the password is only ever typed in — never passed as an argument,
+never fetched from a keychain, never collected by a window that would have to
+put it somewhere. A silent graphical wrapper would be a step backwards here, so
+the bundle is a *launcher*, not a second application.
+
+What it launches is `msgx guide`, which you can also run yourself:
+
+```bash
+msgx guide
+```
+
+It asks for the backup, the messenger and the output directory, runs `analyze`,
+then a rehearsal, and only extracts after an explicit yes. **Every step prints
+the command it is about to run** — so it teaches the tool rather than hiding it,
+and the last thing it prints is the one command you need next time.
+
+The path to `msgx` is baked in at build time, because a bundle cannot know which
+environment you meant. Move or delete the environment and the launcher says so
+on the next start, instead of silently doing nothing.
+
 ### Find backups
 
 ```bash

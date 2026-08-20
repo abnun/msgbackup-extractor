@@ -415,6 +415,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     collect.set_defaults(handler=_command_collect)
 
+    guide = subparsers.add_parser(
+        "guide",
+        help="gefuehrter Ablauf, fuer den Doppelklick-Start",
+        description=(
+            "Fragt nach Backup, Messenger und Ausgabeverzeichnis und fuehrt "
+            "dann analyze und extract aus. Jeder Schritt zeigt vorher den "
+            "Befehl, den er ausfuehrt. Braucht ein Terminal, weil das Passwort "
+            "eines verschluesselten Backups eingetippt werden muss."
+        ),
+    )
+    guide.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Technische Zusatzinformationen in den Schritten.",
+    )
+    guide.add_argument(
+        "--show-paths",
+        action="store_true",
+        help="Zeigt Dateipfade im Klartext statt maskiert.",
+    )
+    guide.set_defaults(handler=_command_guide)
+
     return parser
 
 
@@ -966,6 +988,34 @@ def _command_verify(arguments: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 # Einstiegspunkt
 # ---------------------------------------------------------------------------
+
+
+def _command_guide(arguments: argparse.Namespace) -> int:
+    from msgbackup_extractor.assistant import Assistant, make_runner
+
+    if not sys.stdin.isatty():
+        print(
+            "Der gefuehrte Ablauf braucht ein Terminal: nach dem Passwort eines\n"
+            "verschluesselten Backups wird eingetippt gefragt, nie per Argument.\n"
+            "Ohne Terminal helfen die einzelnen Befehle - siehe msgx --help.",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+
+    # Die Anzeigeschalter des Assistenten gelten fuer jeden Schritt, den er
+    # ausfuehrt - sonst waeren sie nur auf dem Assistenten selbst wirksam,
+    # der gar nichts ausgibt, was sie betreffen koennte.
+    passthrough: list[str] = []
+    if arguments.verbose:
+        passthrough.append("--verbose")
+    if arguments.show_paths:
+        passthrough.append("--show-paths")
+
+    return Assistant(
+        stdin=sys.stdin,
+        stdout=sys.stdout,
+        runner=make_runner(passthrough),
+    ).run()
 
 
 def main(argv: Sequence[str] | None = None) -> int:

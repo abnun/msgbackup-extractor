@@ -51,7 +51,10 @@ CODE_PATTERNS = (
     (re.compile(r"@import\s+(?:url\()?['\"]?(?://|https?://)", re.I), "@import"),
     (re.compile(r"url\(\s*['\"]?(?://|https?://)", re.I), "url()"),
     (re.compile(r"\b(?:fetch|XMLHttpRequest|EventSource|WebSocket)\s*\(", re.I), "network call"),
-    (re.compile(r"fonts\.googleapis|fonts\.gstatic|(?<![\w.])cdn[\w-]*\.", re.I), "third-party host"),
+    (
+        re.compile(r"fonts\.googleapis|fonts\.gstatic|(?<![\w.])cdn[\w-]*\.", re.I),
+        "third-party host",
+    ),
 )
 
 

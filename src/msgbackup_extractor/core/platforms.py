@@ -127,6 +127,22 @@ def clipboard_command() -> str:
     return "xclip -selection clipboard -o"
 
 
+def open_command() -> tuple[str, ...]:
+    """Befehl, der eine Datei mit dem Standardprogramm des Systems oeffnet.
+
+    Wird nur benutzt, um am Ende die erzeugte Ansicht anzuzeigen, und nur wenn
+    der Anwender danach gefragt wurde. Es ist ein lokaler Aufruf; ein
+    Netzzugriff findet dabei nicht statt.
+    """
+    if is_macos():
+        return ("open",)
+    if is_windows():
+        # cmd /c start braucht ein leeres Fensterargument, sonst wird der Pfad
+        # als Fenstertitel verstanden.
+        return ("cmd", "/c", "start", "")
+    return ("xdg-open",)
+
+
 def permission_hint(path: Path) -> str:
     """Was zu tun ist, wenn ein Backup-Verzeichnis nicht lesbar ist."""
     if is_macos():

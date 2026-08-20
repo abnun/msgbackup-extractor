@@ -216,16 +216,26 @@ code, .cmd {
   content: "";
   position: absolute;
   top: 50%;
-  width: 26px;
-  height: 30px;
+  width: 28px;
+  height: 32px;
   transform: translateY(-50%) scaleX(0);
   transition: transform 0.12s steps(3, end);
   background-repeat: no-repeat;
   background-size: 100% 100%;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 30'%3E%3Cg fill='%2315120e'%3E%3Cpath d='M26 15 L2 3 L7 15 Z'/%3E%3Cpath d='M26 15 L0 12 L6 15 Z'/%3E%3Cpath d='M26 15 L0 18 L6 15 Z'/%3E%3Cpath d='M26 15 L2 27 L7 15 Z'/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: no-repeat;
 }
-.btn::before { right: 100%; transform-origin: right center; }
-.btn::after  { left: 100%;  transform-origin: left center; scale: -1 1; }
+.btn::before {
+  right: 100%;
+  transform-origin: right center;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2028%2032%27%3E%3Cg%20fill%3D%27%2315120e%27%3E%3Cpath%20d%3D%22M27.0%2016.0L16.38%204.63L14.58%206.63Z%22%2F%3E%3Cpath%20d%3D%22M27.0%2016.0L8.50%207.07L7.49%209.57Z%22%2F%3E%3Cpath%20d%3D%22M27.0%2016.0L2.50%2014.65L2.50%2017.35Z%22%2F%3E%3Cpath%20d%3D%22M27.0%2016.0L7.49%2022.43L8.50%2024.93Z%22%2F%3E%3Cpath%20d%3D%22M27.0%2016.0L14.58%2025.37L16.38%2027.37Z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+}
+/* Gespiegelt wird das SVG selbst. Die CSS-Eigenschaft `scale` spiegelt um
+   transform-origin und wuerde die Marke zurueck ueber den Knopf werfen. */
+.btn::after {
+  left: 100%;
+  transform-origin: left center;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2028%2032%27%3E%3Cg%20fill%3D%27%2315120e%27%3E%3Cpath%20d%3D%22M1.0%2016.0L13.42%206.63L11.62%204.63Z%22%2F%3E%3Cpath%20d%3D%22M1.0%2016.0L20.51%209.57L19.50%207.07Z%22%2F%3E%3Cpath%20d%3D%22M1.0%2016.0L25.50%2017.35L25.50%2014.65Z%22%2F%3E%3Cpath%20d%3D%22M1.0%2016.0L19.50%2024.93L20.51%2022.43Z%22%2F%3E%3Cpath%20d%3D%22M1.0%2016.0L11.62%2027.37L13.42%2025.37Z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+}
 .btn:hover::before,
 .btn:hover::after,
 .btn:focus-visible::before,

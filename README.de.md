@@ -306,6 +306,42 @@ bewusst auf.
 
 ## Verwendung
 
+### Doppelklicken statt tippen
+
+Für alle, die nicht selbst ein Terminal öffnen wollen, gibt es ein kleines
+macOS-Bündel:
+
+```bash
+scripts/build-app.py            # legt msgbackup-extractor.app in ~/Applications
+```
+
+Es wird auf deinem Rechner aus Bordmitteln gebaut — nichts wird
+heruntergeladen, kein Framework installiert. Das Symbol entsteht als PNG in
+reinem Python, und `iconutil` von macOS macht daraus ein `.icns`.
+
+**Es öffnet ein Terminal, und das ist Absicht.** Ein verschlüsseltes Backup
+braucht ein Passwort, und das wird ausschließlich eingetippt — nie als Argument
+übergeben, nie aus einem Schlüsselbund geholt, nie über ein Fenster
+eingesammelt, das es irgendwohin schreiben müsste. Eine stille grafische
+Oberfläche wäre hier ein Rückschritt. Das Bündel ist deshalb ein *Starter* und
+keine zweite Anwendung.
+
+Gestartet wird `msgx guide`, das man auch direkt aufrufen kann:
+
+```bash
+msgx guide
+```
+
+Es fragt nach Backup, Messenger und Ausgabeverzeichnis, führt `analyze` aus,
+dann einen Probelauf, und extrahiert erst nach einem ausdrücklichen Ja.
+**Jeder Schritt zeigt vorher den Befehl, den er ausführt** — es bringt dir das
+Werkzeug also bei, statt es zu verstecken, und zuletzt nennt es den einen
+Befehl, der beim nächsten Mal genügt.
+
+Der Pfad zu `msgx` wird beim Bauen fest eingesetzt, weil ein Bündel nicht wissen
+kann, welche Umgebung gemeint ist. Wird sie verschoben oder gelöscht, sagt der
+Starter das beim nächsten Start — statt lautlos nichts zu tun.
+
 ### Backups finden
 
 ```bash
