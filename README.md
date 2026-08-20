@@ -327,9 +327,20 @@ then a rehearsal, and only extracts after an explicit yes. **Every step prints
 the command it is about to run** — so it teaches the tool rather than hiding it,
 and the last thing it prints is the one command you need next time.
 
+On **Windows** the same command writes a double-clickable
+`msgbackup-extractor.cmd` to the desktop instead. It opens a console window for
+the same reason. Like the rest of the Windows support, it has never been run
+there. On any other system the script refuses rather than producing something
+unusable — `msgx guide` works there directly.
+
 The path to `msgx` is baked in at build time, because a bundle cannot know which
 environment you meant. Move or delete the environment and the launcher says so
 on the next start, instead of silently doing nothing.
+
+The build **tries** each candidate rather than trusting that it exists: it runs
+`msgx --version` and only accepts one that succeeds. That is not pedantry — a
+virtual environment inside iCloud Drive is present and executable and still
+fails, so a bundle pointing at one would only break on the first double-click.
 
 ### Find backups
 

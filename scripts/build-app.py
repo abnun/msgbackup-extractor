@@ -1,11 +1,26 @@
 #!/usr/bin/env python3
-"""Baut ein doppelklickbares macOS-Bundle um `msgx guide`.
+"""Baut einen doppelklickbaren Starter fuer `msgx guide`.
 
-    scripts/build-app.py                     nach ~/Applications
+    scripts/build-app.py                     an den Standardort
     scripts/build-app.py --into ~/Desktop
     scripts/build-app.py --msgx /pfad/zu/msgx
 
-Was das Bundle ist und was nicht:
+Was entsteht, haengt am System:
+
+| System  | Ergebnis                        | Standardort      |
+|---------|---------------------------------|------------------|
+| macOS   | `msgbackup-extractor.app`       | `~/Applications` |
+| Windows | `msgbackup-extractor.cmd`       | Desktop          |
+| sonst   | nichts, mit Begruendung         | -                |
+
+Auf anderen Systemen wird **abgelehnt** statt etwas Unbrauchbares angelegt: ein
+`.app`-Verzeichnis auf Windows startet nichts, und ein stiller Fehlschlag ist
+schlimmer als eine klare Absage.
+
+Der Windows-Starter ist **ungeprueft**, wie die Windows-Unterstuetzung
+insgesamt. Erzeugt wird er aus derselben Logik, gelaufen ist er dort nie.
+
+Was der Starter ist und was nicht:
 
 * Es ist ein **Starter**, keine zweite Anwendung. Es oeffnet ein Terminal und
   ruft darin `msgx guide` auf. Die eigentliche Arbeit macht dieselbe
@@ -257,6 +272,7 @@ def info_plist(version: str, with_icon: bool) -> dict[str, object]:
 
 
 def build_bundle(into: Path, msgx: Path, version: str, *, quiet: bool = False) -> Path:
+    into.mkdir(parents=True, exist_ok=True)
     bundle = into / f"{APP_NAME}.app"
     if bundle.exists():
         shutil.rmtree(bundle)
@@ -296,13 +312,140 @@ def build_bundle(into: Path, msgx: Path, version: str, *, quiet: bool = False) -
     return bundle
 
 
-def find_msgx() -> Path | None:
-    """Sucht das msgx neben dem laufenden Python, dann im Pfad."""
-    candidate = Path(sys.executable).parent / "msgx"
-    if candidate.exists():
-        return candidate
-    found = shutil.which("msgx")
-    return Path(found) if found else None
+# Ein Doppelklick auf eine .cmd oeffnet ein Konsolenfenster, und damit kann
+# getpass fragen - dasselbe Prinzip wie das Terminal auf macOS. `pause` haelt
+# das Fenster offen, sonst schliesst es sich mit der letzten Zeile.
+WINDOWS_STARTER: Final = """@echo off
+setlocal
+title msgbackup-extractor
+
+set "MSGX={msgx}"
+
+if not exist "%MSGX%" (
+    echo msgbackup-extractor
+    echo.
+    echo Das Programm liegt nicht mehr unter:
+    echo     %MSGX%
+    echo.
+    echo Die Umgebung wurde verschoben oder geloescht. Der Starter laesst sich
+    echo mit dem richtigen Pfad neu bauen:
+    echo.
+    echo     python scripts\\build-app.py --msgx PFAD\\ZU\\msgx.exe
+    echo.
+    pause
+    exit /b 1
+)
+
+"%MSGX%" guide
+set "status=%ERRORLEVEL%"
+
+echo.
+if "%status%"=="0" (
+    echo Fertig.
+) else (
+    echo Beendet mit Code %status%.
+)
+pause
+exit /b %status%
+"""
+
+
+def build_windows_starter(
+    into: Path, msgx: Path, version: str, *, quiet: bool = False
+) -> Path:
+    """Schreibt den doppelklickbaren Starter fuer Windows.
+
+    `version` wird nicht eingesetzt - eine .cmd hat keine Metadaten. Der
+    Parameter bleibt, damit die Weiche beide Bauer gleich aufrufen kann.
+    """
+    del version
+    into.mkdir(parents=True, exist_ok=True)
+    starter = into / f"{APP_NAME}.cmd"
+    # In einer Batchdatei ist `%` das Fluchtzeichen fuer sich selbst. Doppelte
+    # Anfuehrungszeichen sind in Windows-Pfaden nicht erlaubt, also kein Thema.
+    starter.write_text(
+        WINDOWS_STARTER.format(msgx=str(msgx).replace("%", "%%")),
+        encoding="utf-8",
+        newline="\r\n",
+    )
+    if not quiet:
+        print(f"Gebaut: {starter}")
+        print(f"Startet: {msgx} guide")
+        print("Ungeprueft: dieser Starter ist nie auf Windows gelaufen.")
+    return starter
+
+
+def candidate_paths(
+    home: Path | None = None,
+    repo: Path | None = None,
+    interpreter_dir: Path | None = None,
+):
+    """Orte, an denen `msgx` liegen kann, in der Reihenfolge der Verlaesslichkeit.
+
+    Der haeufigste Fall ist, dass dieses Skript mit dem System-Python
+    aufgerufen wird - dann liegt `msgx` nicht neben dem laufenden Python, und
+    ein Alias in der Shell taucht im PATH nicht auf. Deshalb wird auch dort
+    gesucht, wo die Anleitung die Umgebung anlegt.
+    """
+    base = home or Path.home()
+    wurzel = repo or Path(__file__).resolve().parent.parent
+    namen = ("msgx", "msgx.exe")
+    # Einsetzbar, damit ein Test nicht die Umgebung findet, in der er laeuft.
+    hier = interpreter_dir or Path(sys.executable).parent
+    for name in namen:
+        yield hier / name                     # dasselbe venv wie dieses Python
+        yield hier / "Scripts" / name         # Windows-Layout
+    for verzeichnis in (wurzel / ".venv", *sorted((base / ".venvs").glob("*"))):
+        for unter in ("bin", "Scripts"):
+            for name in namen:
+                yield verzeichnis / unter / name
+
+
+def works(candidate: Path) -> bool:
+    """Laeuft dieses msgx ueberhaupt?
+
+    Vorhanden und ausfuehrbar genuegt nicht. Eine virtuelle Umgebung in iCloud
+    Drive ist beides und funktioniert trotzdem nicht - iCloud versteckt die
+    `.pth`-Dateien und Python ueberspringt sie stillschweigend. Ein Buendel, das
+    auf so eine Umgebung zeigt, scheitert erst beim Doppelklick, und dann sieht
+    es aus wie ein Fehler des Programms.
+    """
+    if not (candidate.is_file() and os.access(candidate, os.X_OK)):
+        return False
+    try:
+        result = subprocess.run(
+            [str(candidate), "--version"],
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
+def find_msgx(
+    home: Path | None = None,
+    repo: Path | None = None,
+    interpreter_dir: Path | None = None,
+    *,
+    search_path: bool = True,
+) -> tuple[Path | None, list[Path]]:
+    """Liefert das erste msgx, das laeuft - und alles, was geprueft wurde."""
+    geprueft: list[Path] = []
+    for candidate in candidate_paths(home, repo, interpreter_dir):
+        if candidate in geprueft or not candidate.is_file():
+            continue
+        geprueft.append(candidate)
+        if works(candidate):
+            return candidate, geprueft
+    found = shutil.which("msgx") if search_path else None
+    if found:
+        gefunden = Path(found)
+        geprueft.append(gefunden)
+        if works(gefunden):
+            return gefunden, geprueft
+    return None, geprueft
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -310,8 +453,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--into",
         type=Path,
-        default=Path.home() / "Applications",
-        help="Zielverzeichnis (Standard: ~/Applications)",
+        default=None,
+        help="Zielverzeichnis (Standard: ~/Applications bzw. Desktop)",
     )
     parser.add_argument(
         "--msgx",
@@ -321,27 +464,58 @@ def main(argv: list[str] | None = None) -> int:
     )
     arguments = parser.parse_args(argv)
 
-    msgx = arguments.msgx or find_msgx()
-    if msgx is None:
+    if sys.platform == "darwin":
+        bauen, standardort = build_bundle, Path.home() / "Applications"
+    elif sys.platform.startswith("win"):
+        bauen, standardort = build_windows_starter, Path.home() / "Desktop"
+    else:
         print(
-            "msgx wurde nicht gefunden. Bitte den Pfad angeben:\n"
-            "    scripts/build-app.py --msgx ~/.venvs/msgx/bin/msgx",
+            f"Fuer {sys.platform} gibt es keinen Doppelklick-Starter, und es wird\n"
+            "auch keiner erfunden. Der gefuehrte Ablauf laeuft dort direkt:\n"
+            "    msgx guide",
             file=sys.stderr,
         )
         return 2
-    msgx = msgx.expanduser().resolve()
-    if not (msgx.exists() and os.access(msgx, os.X_OK)):
-        print(f"Nicht ausfuehrbar: {msgx}", file=sys.stderr)
-        return 2
+
+    if arguments.msgx is not None:
+        msgx = arguments.msgx.expanduser().resolve()
+        if not works(msgx):
+            print(
+                f"Dieses msgx laeuft nicht: {msgx}\n"
+                "Pruefen mit:  " + str(msgx) + " --version",
+                file=sys.stderr,
+            )
+            return 2
+    else:
+        gefunden, geprueft = find_msgx()
+        if gefunden is None:
+            print("Kein funktionierendes msgx gefunden.", file=sys.stderr)
+            if geprueft:
+                print("\nGeprueft und verworfen:", file=sys.stderr)
+                for kandidat in geprueft:
+                    print(f"    {kandidat}", file=sys.stderr)
+                print(
+                    "\nEine virtuelle Umgebung in iCloud Drive ist vorhanden und\n"
+                    "trotzdem unbrauchbar - iCloud versteckt die .pth-Dateien.\n"
+                    "Siehe README, Abschnitt Installation.",
+                    file=sys.stderr,
+                )
+            print(
+                "\nOder den Pfad direkt angeben:\n"
+                "    scripts/build-app.py --msgx ~/.venvs/msgbackup-extractor/bin/msgx",
+                file=sys.stderr,
+            )
+            return 2
+        msgx = gefunden.resolve()
 
     try:
         from msgbackup_extractor import __version__ as version
     except ImportError:
         version = "0"
 
-    into = arguments.into.expanduser()
+    into = (arguments.into or standardort).expanduser()
     into.mkdir(parents=True, exist_ok=True)
-    build_bundle(into, msgx, version)
+    bauen(into, msgx, version)
     return 0
 
 

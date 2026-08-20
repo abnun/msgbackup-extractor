@@ -50,7 +50,7 @@
       <a href="#check">Nachprüfbar</a>
       <a href="../" hreflang="en" lang="en">English</a>
     </nav>
-    <a class="btn btn--fill" href="https://github.com/abnun/msgbackup-extractor">Source code</a>
+    <a class="btn btn--fill" href="https://github.com/abnun/msgbackup-extractor" target="_blank" rel="noopener noreferrer">Source code</a>
   </div>
 </header>
 
@@ -64,7 +64,7 @@
       Threema und WhatsApp. Keine Cloud, kein Konto, nichts wird hochgeladen.</p>
       <div class="hero__cta">
         <a class="btn btn--fill" href="#start">Wie du anfängst</a>
-        <a class="btn btn--out" href="https://github.com/abnun/msgbackup-extractor/blob/main/README.de.md">Handbuch lesen</a>
+        <a class="btn btn--out" href="https://github.com/abnun/msgbackup-extractor/blob/main/README.de.md" target="_blank" rel="noopener noreferrer">Handbuch lesen</a>
       </div>
     </div>
     <svg class="hero__art" viewBox="0 0 700 520" role="img" aria-label="Ein geschnittenes Bild: ein unlesbares Telefon mit einem Strahlenbündel dahinter, aus dem vier Fotos herausfallen — ein Bild, ein Video, eine Sprachnachricht und ein Dokument.">
@@ -224,9 +224,7 @@
     </div>
     <div class="panel panel--ink">
       <p class="label label--spaced">Installation</p>
-      <p class="hint">Drei Zeilen, und eine Falle, die man kennen sollte. Danach
-      baut <code>scripts/build-app.py</code> ein doppelklickbares Bündel, das
-      ein Terminal öffnet und dich durchführt.</p>
+      <p class="hint">Drei Zeilen, und eine Falle, die man kennen sollte.</p>
       <div class="cmdbar cmdbar--invert">git clone https://github.com/abnun/msgbackup-extractor.git
 python3 -m venv ~/.venvs/msgx
 ~/.venvs/msgx/bin/pip install -e .</div>
@@ -236,11 +234,28 @@ python3 -m venv ~/.venvs/msgx
       iCloud versteckt die <code>.pth</code>-Dateien, Python überspringt sie
       dann stillschweigend, und die Installation sieht gelungen aus, ist es aber nicht. Das Handbuch zeigt, wie man das
       prüft.</p>
-      <p class="panel__cta"><a class="btn btn--out btn--on-ink" href="https://github.com/abnun/msgbackup-extractor/blob/main/README.de.md#installation">Vollständige Anleitung</a></p>
+      <p class="panel__cta"><a class="btn btn--out btn--on-ink" href="https://github.com/abnun/msgbackup-extractor/blob/main/README.de.md#installation" target="_blank" rel="noopener noreferrer">Vollständige Anleitung</a></p>
     </div>
   </div>
 
-  <div class="head" id="check">
+    <div class="panel panel--ink panel--wide">
+    <p class="label label--tight">Lieber nicht tippen?</p>
+    <p class="lede lede--flush">Ein Befehl baut eine App zum Doppelklicken, die
+    all das oben für dich macht und dabei eine Frage nach der anderen stellt.</p>
+    <div class="cmdbar cmdbar--invert cmdbar--roomy">scripts/build-app.py</div>
+    <p class="hint">Sie wird auf deinem Rechner aus Bordmitteln gebaut — nichts
+    heruntergeladen, kein Framework installiert. <strong>Sie öffnet ein Terminal,
+    und das ist Absicht:</strong> ein verschlüsseltes Backup braucht ein
+    Passwort, und das wird ausschließlich eingetippt, nie weitergegeben. Sie ist
+    also ein Starter und kein zweites Programm — und jeder Schritt zeigt den
+    Befehl, den er ausführt, bringt dir das Werkzeug also bei statt es zu
+    verstecken.</p>
+    <p class="hint">Unter Windows schreibt derselbe Befehl eine doppelklickbare
+    <code>.cmd</code>. Wie die Windows-Unterstützung insgesamt ist sie dort nie
+    gelaufen.</p>
+  </div>
+
+<div class="head" id="check">
     <span class="head__no">05</span>
     <h2>Warum du es nachprüfen kannst</h2>
   </div>
@@ -278,12 +293,25 @@ python3 -m venv ~/.venvs/msgx
     Backup einer anderen Person anzuwenden, kann eine Straftat sein. Lass es.</p>
   </div>
 
+  <div class="panel panel--wide">
+    <p class="label label--tight">Hat es deine Bilder zurückgeholt?</p>
+    <p class="lede">Dann würde ich das wirklich gerne hören — eine Zeile genügt.
+    Kritik ist genauso willkommen, und eine Fehlermeldung mit der
+    Diagnoseausgabe des Werkzeugs ist das Nützlichste, was mir jemand schicken
+    kann.</p>
+    <p class="hint"><span class="mail"><span class="mail-benutzer">abnun</span><span class="mail-at"></span><span class="mail-anbieter">gmx.de</span></span></p>
+    <p class="hint"><strong>Bitte keine extrahierten Nachrichtendaten senden.</strong>
+    Die Diagnoseberichte sind so gebaut, dass sie keine Nachrichteninhalte und
+    keine Klarnamen enthalten — die genügen, und alles andere lösche ich
+    ungelesen.</p>
+  </div>
+
 </main>
 
 <footer class="sheet colophon">
   <nav>
-    <a href="https://github.com/abnun/msgbackup-extractor">Quellcode auf GitHub</a>
-    <a href="https://github.com/abnun/msgbackup-extractor/blob/main/README.de.md">Handbuch</a>
+    <a href="https://github.com/abnun/msgbackup-extractor" target="_blank" rel="noopener noreferrer">Quellcode auf GitHub</a>
+    <a href="https://github.com/abnun/msgbackup-extractor/blob/main/README.de.md" target="_blank" rel="noopener noreferrer">Handbuch</a>
     <a href="../" hreflang="en" lang="en">English</a>
     <a href="../impressum.html">Impressum</a>
     <a href="../datenschutz.html">Datenschutz</a>

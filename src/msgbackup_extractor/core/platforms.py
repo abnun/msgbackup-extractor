@@ -20,6 +20,7 @@ restliche Ablauf ist davon unabhaengig.
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,10 +45,18 @@ _MACOS_ROOTS: Final = (
 #: Windows: iTunes und die Apple-Geraete-App aus dem Microsoft Store legen
 #: Backups an unterschiedlichen Orten ab. Beide werden gesucht, weil beide
 #: verbreitet sind.
-_WINDOWS_ROOTS: Final = (
-    ("AppData/Roaming/Apple Computer/MobileSync/Backup", "iTunes"),
+#:
+#: Zwei verschiedene Bezugspunkte, und das ist wichtig: die iTunes-Pfade haengen
+#: an %APPDATA%, der Pfad der Geraete-App am Benutzerprofil. %APPDATA% ist NICHT
+#: zwingend <Profil>\AppData\Roaming - in einem Roaming- oder Domaenenprofil
+#: kann es umgeleitet sein. Wer es ableitet statt es zu lesen, sucht dort am
+#: falschen Ort und meldet dann "kein Backup gefunden".
+_WINDOWS_APPDATA_ROOTS: Final = (
+    ("Apple Computer/MobileSync/Backup", "iTunes"),
     ("Apple/MobileSync/Backup", "Apple-Geraete-App"),
-    ("AppData/Roaming/Apple/MobileSync/Backup", "Apple-Geraete-App"),
+)
+_WINDOWS_PROFILE_ROOTS: Final = (
+    ("Apple/MobileSync/Backup", "Apple-Geraete-App"),
 )
 
 #: Auf anderen Systemen gibt es keinen offiziellen Ort. Ein per libimobiledevice
@@ -87,13 +96,40 @@ def is_windows() -> bool:
     return sys.platform.startswith("win")
 
 
-def backup_locations(home: Path | None = None) -> tuple[BackupLocation, ...]:
-    """Alle Orte, an denen auf diesem System Backups liegen koennen."""
+def backup_locations(
+    home: Path | None = None, appdata: Path | None = None
+) -> tuple[BackupLocation, ...]:
+    """Alle Orte, an denen auf diesem System Backups liegen koennen.
+
+    `appdata` ist der Wert von %APPDATA%. Fehlt er, wird der ueblich Ort unter
+    dem Profil angenommen - das ist eine Annahme und deshalb nur der Rueckfall,
+    nicht der Regelfall.
+    """
     base = home or Path.home()
     if is_macos():
         entries = _MACOS_ROOTS
     elif is_windows():
-        entries = _WINDOWS_ROOTS
+        roaming = appdata
+        if roaming is None:
+            aus_umgebung = os.environ.get("APPDATA")
+            roaming = Path(aus_umgebung) if aus_umgebung else base / "AppData" / "Roaming"
+        gefunden = [
+            BackupLocation(path=roaming / relative, source=source)
+            for relative, source in _WINDOWS_APPDATA_ROOTS
+        ]
+        gefunden += [
+            BackupLocation(path=base / relative, source=source)
+            for relative, source in _WINDOWS_PROFILE_ROOTS
+        ]
+        # Gleiche Pfade koennen doppelt auftreten, wenn %APPDATA% der uebliche
+        # Ort ist. Reihenfolge erhalten, Duplikate entfernen.
+        gesehen: set[Path] = set()
+        eindeutig: list[BackupLocation] = []
+        for eintrag in gefunden:
+            if eintrag.path not in gesehen:
+                gesehen.add(eintrag.path)
+                eindeutig.append(eintrag)
+        return tuple(eindeutig)
     else:
         entries = _OTHER_ROOTS
     return tuple(

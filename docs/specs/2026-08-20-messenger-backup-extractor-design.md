@@ -1454,3 +1454,44 @@ Und ein Versuch, den Ablauf über `script -q /dev/null` an einem Pseudoterminal
 zu prüfen, schlug fehl, weil `script` die Eingabe selbst schluckt. Geprüft wird
 die Integration deshalb im Prozess: der Assistent mit echten Strömen aus dem
 Speicher und dem **echten** Runner, gegen ein synthetisches Backup.
+
+### 30.6 Nachtrag: Windows, und ein Kandidat muss laufen
+
+Die Frage „funktioniert die App auch auf Windows?" war mit nein zu beantworten,
+und das Nachsehen brachte drei echte Fehler zutage.
+
+**Das Bauskript hatte keine einzige Plattformabfrage.** Unter Windows hätte es
+bereitwillig ein `.app`-Verzeichnis angelegt, das dort nichts startet. Jetzt
+gibt es eine Weiche: macOS baut das Bündel, Windows eine doppelklickbare `.cmd`
+(ein Doppelklick darauf öffnet ein Konsolenfenster, damit `getpass` fragen kann
+— dasselbe Prinzip), und auf allem anderen wird abgelehnt statt etwas
+Unbrauchbares angelegt.
+
+Der Assistent selbst war nie das Problem: `msgx guide` berührt nur
+`platforms.*` und läuft überall. Nur die Hülle war macOS.
+
+**`%APPDATA%` wurde abgeleitet statt gelesen.** `backup_locations()` baute die
+Windows-Pfade aus `Path.home()` zusammen. In einem Roaming- oder Domänenprofil
+zeigt `%APPDATA%` aber woandershin, und dann sucht das Werkzeug am falschen Ort
+und meldet „kein Backup gefunden" — mit einem Pfad, den es auf dem Rechner nicht
+gibt. Genau die Sorte Annahme, die dieses Projekt sonst vermeidet. Jetzt wird
+die Umgebungsvariable gelesen, und die Ableitung ist nur noch der Rückfall.
+Wichtig dabei: die iTunes-Pfade hängen an `%APPDATA%`, der Pfad der
+Apple-Geräte-App am Benutzerprofil. Zwei Bezugspunkte, nicht einer.
+
+**Ein vorhandenes `msgx` ist nicht unbedingt ein brauchbares.** Der Bauer suchte
+nach Existenz und Ausführbarkeit — und fand beim ersten Versuch prompt die
+`.venv` im iCloud-Projektverzeichnis, also genau die Umgebung, vor der die
+Anleitung warnt. Sie ist vorhanden, sie ist ausführbar, und sie scheitert mit
+`ModuleNotFoundError`, weil iCloud die `.pth`-Dateien versteckt. Ein Bündel
+darauf wäre erst beim ersten Doppelklick aufgefallen, und dann hätte es wie ein
+Fehler des Programms ausgesehen.
+
+Behoben, indem der Bauer jeden Kandidaten **ausprobiert**: `msgx --version`,
+Rückgabewert 0, sonst weitersuchen. Scheitert alles, nennt die Meldung jeden
+geprüften Pfad und den iCloud-Grund. Auch `--msgx` umgeht die Suche, nicht die
+Prüfung.
+
+Das ist dasselbe Muster wie überall in diesem Projekt: nicht fragen, ob etwas da
+ist, sondern ob es tut, was es soll. Hier hat es beim ersten Lauf einen Fehler
+gefunden, den kein Test gestellt hätte.

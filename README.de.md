@@ -338,9 +338,21 @@ dann einen Probelauf, und extrahiert erst nach einem ausdrücklichen Ja.
 Werkzeug also bei, statt es zu verstecken, und zuletzt nennt es den einen
 Befehl, der beim nächsten Mal genügt.
 
+Unter **Windows** schreibt derselbe Befehl stattdessen eine doppelklickbare
+`msgbackup-extractor.cmd` auf den Desktop. Sie öffnet aus demselben Grund ein
+Konsolenfenster. Wie die Windows-Unterstützung insgesamt ist sie dort nie
+gelaufen. Auf jedem anderen System lehnt das Skript ab, statt etwas
+Unbrauchbares anzulegen — `msgx guide` läuft dort direkt.
+
 Der Pfad zu `msgx` wird beim Bauen fest eingesetzt, weil ein Bündel nicht wissen
 kann, welche Umgebung gemeint ist. Wird sie verschoben oder gelöscht, sagt der
 Starter das beim nächsten Start — statt lautlos nichts zu tun.
+
+Der Bauer **probiert** jeden Kandidaten aus, statt sich auf sein Vorhandensein
+zu verlassen: er ruft `msgx --version` auf und nimmt nur, was durchläuft. Das
+ist keine Pedanterie — eine virtuelle Umgebung in iCloud Drive ist vorhanden und
+ausführbar und scheitert trotzdem, ein Bündel darauf würde erst beim ersten
+Doppelklick auffallen.
 
 ### Backups finden
 

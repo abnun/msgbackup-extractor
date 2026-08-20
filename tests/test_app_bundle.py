@@ -264,3 +264,170 @@ def test_iconutil_accepts_the_generated_iconset(
     assert "CFBundleIconFile" in plistlib.loads(
         (bundle / "Contents" / "Info.plist").read_bytes()
     )
+
+
+# ---------------------------------------------------------------------------
+# Der Windows-Starter
+# ---------------------------------------------------------------------------
+
+
+def test_the_windows_starter_bakes_in_the_path_and_calls_guide(
+    builder: ModuleType, tmp_path: Path, fake_msgx: Path
+) -> None:
+    starter = builder.build_windows_starter(tmp_path, fake_msgx, "1", quiet=True)
+
+    text = starter.read_text(encoding="utf-8")
+
+    assert starter.suffix == ".cmd", "nur eine .cmd ist doppelklickbar"
+    assert f'set "MSGX={fake_msgx}"' in text
+    assert '"%MSGX%" guide' in text
+    # `pause` haelt das Fenster offen - sonst schliesst es sich mit der letzten
+    # Zeile und niemand liest den Bericht.
+    assert "pause" in text
+
+
+def test_the_windows_starter_uses_crlf(
+    builder: ModuleType, tmp_path: Path, fake_msgx: Path
+) -> None:
+    """Eine Batchdatei mit reinen Zeilenumbruechen bricht auf aelteren cmd.exe."""
+    starter = builder.build_windows_starter(tmp_path, fake_msgx, "1", quiet=True)
+
+    rohdaten = starter.read_bytes()
+
+    assert b"\r\n" in rohdaten
+    assert b"\n" not in rohdaten.replace(b"\r\n", b"")
+
+
+def test_a_percent_in_the_path_is_escaped_for_batch(
+    builder: ModuleType, tmp_path: Path
+) -> None:
+    """In einer Batchdatei ist % das Fluchtzeichen fuer sich selbst."""
+    msgx = tmp_path / "100%ordner" / "msgx.exe"
+    msgx.parent.mkdir(parents=True)
+    msgx.write_text("", encoding="utf-8")
+
+    starter = builder.build_windows_starter(tmp_path / "z", msgx, "1", quiet=True)
+
+    assert "100%%ordner" in starter.read_text(encoding="utf-8")
+
+
+def test_the_windows_starter_reports_a_moved_environment(
+    builder: ModuleType, tmp_path: Path, fake_msgx: Path
+) -> None:
+    starter = builder.build_windows_starter(tmp_path, fake_msgx, "1", quiet=True)
+
+    text = starter.read_text(encoding="utf-8")
+
+    assert "if not exist" in text
+    assert "liegt nicht mehr" in text
+    assert "build-app.py" in text
+
+
+def test_the_windows_starter_passes_no_password_and_reaches_no_network(
+    builder: ModuleType, tmp_path: Path, fake_msgx: Path
+) -> None:
+    starter = builder.build_windows_starter(tmp_path, fake_msgx, "1", quiet=True)
+
+    text = starter.read_text(encoding="utf-8").lower()
+
+    for verboten in ("--password", "password=", "curl", "wget", "http://", "https://"):
+        assert verboten not in text
+
+
+# ---------------------------------------------------------------------------
+# Die Plattformweiche
+# ---------------------------------------------------------------------------
+
+
+def test_an_unsupported_platform_is_refused_not_faked(
+    builder: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """Ein .app-Verzeichnis auf Linux startet nichts.
+
+    Frueher hat das Skript ueberall ein Bundle gebaut. Ein stiller Fehlschlag
+    ist schlimmer als eine klare Absage.
+    """
+    monkeypatch.setattr("sys.platform", "linux")
+
+    code = builder.main([])
+
+    assert code == 2
+    assert "msgx guide" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# Welches msgx eingesetzt wird
+# ---------------------------------------------------------------------------
+
+
+def _stub(path: Path, *, exit_code: int = 0) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"#!/bin/sh\nexit {exit_code}\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def test_works_requires_a_run_not_just_a_file(
+    builder: ModuleType, tmp_path: Path
+) -> None:
+    """Vorhanden und ausfuehrbar genuegt nicht - es muss laufen."""
+    laeuft = _stub(tmp_path / "gut" / "msgx")
+    scheitert = _stub(tmp_path / "kaputt" / "msgx", exit_code=1)
+    nur_text = tmp_path / "text" / "msgx"
+    nur_text.parent.mkdir()
+    nur_text.write_text("kein Programm", encoding="utf-8")
+
+    assert builder.works(laeuft)
+    assert not builder.works(scheitert)
+    assert not builder.works(nur_text)
+    assert not builder.works(tmp_path / "gibtsnicht")
+
+
+def test_a_broken_environment_is_skipped_for_a_working_one(
+    builder: ModuleType, tmp_path: Path
+) -> None:
+    """Der Fall, der hier wirklich vorkam.
+
+    Eine virtuelle Umgebung in iCloud Drive ist vorhanden und ausfuehrbar und
+    scheitert trotzdem mit ModuleNotFoundError. Wer nur auf Existenz prueft,
+    baut ein Buendel, das erst beim Doppelklick auffaellt.
+    """
+    repo = tmp_path / "projekt"
+    home = tmp_path / "home"
+    _stub(repo / ".venv" / "bin" / "msgx", exit_code=1)      # die kaputte
+    gut = _stub(home / ".venvs" / "msgbackup-extractor" / "bin" / "msgx")
+
+    gefunden, geprueft = builder.find_msgx(
+        home=home, repo=repo, interpreter_dir=tmp_path / "leer", search_path=False
+    )
+
+    assert gefunden == gut
+    assert repo / ".venv" / "bin" / "msgx" in geprueft, "sie muss geprueft worden sein"
+
+
+def test_nothing_working_reports_what_was_tried(
+    builder: ModuleType, tmp_path: Path
+) -> None:
+    """Eine Absage ohne Liste laesst den Anwender raten."""
+    repo = tmp_path / "projekt"
+    home = tmp_path / "home"
+    _stub(repo / ".venv" / "bin" / "msgx", exit_code=1)
+
+    gefunden, geprueft = builder.find_msgx(
+        home=home, repo=repo, interpreter_dir=tmp_path / "leer", search_path=False
+    )
+
+    assert gefunden is None
+    assert geprueft, "die geprueften Kandidaten gehoeren in die Meldung"
+
+
+def test_an_explicitly_given_msgx_is_still_tried(
+    builder: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """--msgx umgeht die Suche, nicht die Pruefung."""
+    kaputt = _stub(tmp_path / "kaputt" / "msgx", exit_code=1)
+
+    code = builder.main(["--msgx", str(kaputt), "--into", str(tmp_path / "z")])
+
+    assert code == 2
+    assert "laeuft nicht" in capsys.readouterr().err

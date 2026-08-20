@@ -278,3 +278,73 @@ def test_no_macos_only_paths_outside_the_platform_module() -> None:
                     continue
                 offenders.append(f"{path.name}: {line.strip()[:60]}")
     assert not offenders, f"Fest verdrahtete macOS-Pfade: {offenders}"
+
+
+# ---------------------------------------------------------------------------
+# %APPDATA% wird gelesen, nicht abgeleitet
+# ---------------------------------------------------------------------------
+
+
+def test_windows_follows_a_redirected_appdata(monkeypatch: pytest.MonkeyPatch) -> None:
+    """In einem Roaming- oder Domaenenprofil liegt %APPDATA% nicht unter dem Profil.
+
+    Wer es ableitet, sucht am falschen Ort und meldet dann "kein Backup
+    gefunden" - mit einem Pfad, den es auf dem Rechner gar nicht gibt.
+    """
+    monkeypatch.setattr("sys.platform", "win32")
+
+    orte = platforms.backup_locations(
+        Path("C:/Users/mm"), appdata=Path("D:/Profile/mm/Roaming")
+    )
+    pfade = [str(o.path) for o in orte]
+
+    assert any("D:/Profile/mm/Roaming" in p and "Apple Computer" in p for p in pfade)
+    # Der Pfad der Geraete-App haengt am Profil, nicht an %APPDATA%.
+    assert any(p.startswith("C:/Users/mm/Apple") for p in pfade)
+    assert not any("C:/Users/mm/AppData" in p for p in pfade)
+
+
+def test_windows_falls_back_to_the_usual_place_without_appdata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.delenv("APPDATA", raising=False)
+
+    pfade = [str(o.path) for o in platforms.backup_locations(Path("C:/Users/mm"))]
+
+    assert any("C:/Users/mm/AppData/Roaming/Apple Computer" in p for p in pfade)
+
+
+def test_windows_reads_appdata_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ohne ausdrueckliches Argument gilt die Umgebung, nicht die Annahme."""
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("APPDATA", "E:/Umgeleitet/Roaming")
+
+    pfade = [str(o.path) for o in platforms.backup_locations(Path("C:/Users/mm"))]
+
+    assert any("E:/Umgeleitet/Roaming/Apple Computer" in p for p in pfade)
+
+
+def test_no_duplicate_locations_when_appdata_is_the_usual_place(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sonst stehen identische Pfade doppelt in der Fehlermeldung."""
+    monkeypatch.setattr("sys.platform", "win32")
+
+    orte = platforms.backup_locations(
+        Path("C:/Users/mm"), appdata=Path("C:/Users/mm/AppData/Roaming")
+    )
+    pfade = [o.path for o in orte]
+
+    assert len(pfade) == len(set(pfade))
+
+
+def test_open_command_differs_per_platform(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.platform", "darwin")
+    assert platforms.open_command() == ("open",)
+    monkeypatch.setattr("sys.platform", "win32")
+    assert platforms.open_command()[0] == "cmd"
+    monkeypatch.setattr("sys.platform", "linux")
+    assert platforms.open_command() == ("xdg-open",)

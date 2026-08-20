@@ -66,7 +66,7 @@
       <a href="#check">Why trust it</a>
       <a href="de/" hreflang="de" lang="de">Deutsch</a>
     </nav>
-    <a class="btn btn--fill" href="https://github.com/abnun/msgbackup-extractor">Source code</a>
+    <a class="btn btn--fill" href="https://github.com/abnun/msgbackup-extractor" target="_blank" rel="noopener noreferrer">Source code</a>
   </div>
 </header>
 
@@ -80,7 +80,7 @@
       and WhatsApp. No cloud, no account, nothing uploaded.</p>
       <div class="hero__cta">
         <a class="btn btn--fill" href="#start">How to start</a>
-        <a class="btn btn--out" href="https://github.com/abnun/msgbackup-extractor#readme">Read the handbook</a>
+        <a class="btn btn--out" href="https://github.com/abnun/msgbackup-extractor#readme" target="_blank" rel="noopener noreferrer">Read the handbook</a>
       </div>
     </div>
     <svg class="hero__art" viewBox="0 0 700 520" role="img" aria-label="A cut illustration: an unreadable phone with a burst behind it and four photographs spilling out - a picture, a video, a voice message and a document.">
@@ -243,9 +243,7 @@
     </div>
     <div class="panel panel--ink">
       <p class="label label--spaced">Installation</p>
-      <p class="hint">Three lines, and one trap worth knowing about. Afterwards
-      <code>scripts/build-app.py</code> builds a double-clickable bundle that
-      opens a Terminal and walks you through it.</p>
+      <p class="hint">Three lines, and one trap worth knowing about.</p>
       <div class="cmdbar cmdbar--invert">git clone https://github.com/abnun/msgbackup-extractor.git
 python3 -m venv ~/.venvs/msgx
 ~/.venvs/msgx/bin/pip install -e .</div>
@@ -254,11 +252,27 @@ python3 -m venv ~/.venvs/msgx
       <p class="hint"><strong>Do not put the virtual environment inside iCloud Drive.</strong> iCloud hides the <code>.pth</code> files, Python then skips
       them silently, and the install looks like it worked when it did not. The
       handbook shows how to check.</p>
-      <p class="panel__cta"><a class="btn btn--out btn--on-ink" href="https://github.com/abnun/msgbackup-extractor#installation">Full instructions</a></p>
+      <p class="panel__cta"><a class="btn btn--out btn--on-ink" href="https://github.com/abnun/msgbackup-extractor#installation" target="_blank" rel="noopener noreferrer">Full instructions</a></p>
     </div>
   </div>
 
-  <div class="head" id="check">
+    <div class="panel panel--ink panel--wide">
+    <p class="label label--tight">Rather not type?</p>
+    <p class="lede lede--flush">One command builds a double-clickable app that
+    does all of the above for you, asking one question at a time.</p>
+    <div class="cmdbar cmdbar--invert cmdbar--roomy">scripts/build-app.py</div>
+    <p class="hint">It is built on your machine from what macOS already has —
+    nothing downloaded, no framework installed. <strong>It opens a Terminal, and
+    that is deliberate:</strong> an encrypted backup needs a password, and the
+    password is only ever typed in, never passed along. So it is a launcher, not
+    a second program — and every step prints the command it runs, which means it
+    teaches you the tool instead of hiding it.</p>
+    <p class="hint">On Windows the same command writes a double-clickable
+    <code>.cmd</code> instead. Like the rest of the Windows support, it has never
+    been run there.</p>
+  </div>
+
+<div class="head" id="check">
     <span class="head__no">05</span>
     <h2>Why you can trust it</h2>
   </div>
@@ -295,12 +309,23 @@ python3 -m venv ~/.venvs/msgx
     a criminal offence. Don't.</p>
   </div>
 
+  <div class="panel panel--wide">
+    <p class="label label--tight">Did this get your pictures back?</p>
+    <p class="lede">Then I would genuinely like to hear about it — a line is
+    enough. Criticism is just as welcome, and a bug report with the tool's own
+    diagnostic output is the most useful thing anyone can send.</p>
+    <p class="hint"><span class="mail"><span class="mail-benutzer">abnun</span><span class="mail-at"></span><span class="mail-anbieter">gmx.de</span></span></p>
+    <p class="hint"><strong>Please do not send extracted message data.</strong>
+    The diagnostic reports are built so they carry no message contents and no
+    real names — those are enough, and anything else I delete unread.</p>
+  </div>
+
 </main>
 
 <footer class="sheet colophon">
   <nav>
-    <a href="https://github.com/abnun/msgbackup-extractor">Source on GitHub</a>
-    <a href="https://github.com/abnun/msgbackup-extractor#readme">Handbook</a>
+    <a href="https://github.com/abnun/msgbackup-extractor" target="_blank" rel="noopener noreferrer">Source on GitHub</a>
+    <a href="https://github.com/abnun/msgbackup-extractor#readme" target="_blank" rel="noopener noreferrer">Handbook</a>
     <a href="de/" hreflang="de" lang="de">Deutsch</a>
     <a href="impressum.html">Impressum</a>
     <a href="datenschutz.html">Datenschutz</a>
