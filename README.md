@@ -42,6 +42,169 @@ Dieses Programm arbeitet **ausschließlich lokal**:
 Details zum Sicherheitsmodell und zur Architektur:
 [`docs/specs/2026-08-20-messenger-backup-extractor-design.md`](docs/specs/2026-08-20-messenger-backup-extractor-design.md)
 
+## Wie es funktioniert
+
+Sechs Schritte, jeder ein eigener Befehl. Man kann nach jedem aufhören.
+
+```
+  iPhone
+    │  Finder-Backup (lokal, verschlüsselt oder nicht)
+    ▼
+  ~/Library/Application Support/MobileSync/Backup/<UDID>
+    │
+    │  msgx backups     Welche Backups liegen hier?
+    │  msgx analyze     Was steckt drin? (nur lesen, nichts schreiben)
+    │  msgx database    Wie sieht das Schema der App-Datenbank aus?
+    ▼
+  msgx extract  ──────────────────────────────────────┐
+    │                                                 │
+    │  liest das Backup ausschließlich lesend         │
+    ▼                                                 │
+  ~/messenger-extract/export/threema/                 │
+    ├── media/ chats/ databases/ metadata/            │
+    └── export-manifest.json  ◄─── die Nachweisebene ─┘
+    │
+    │  msgx ui        erzeugt index.html aus dem Manifest
+    │  msgx verify    prüft den Export gegen das Manifest
+    ▼
+  index.html im Browser
+    │  auswählen, „Auswahl übernehmen …“, Liste kopieren
+    ▼
+  msgx collect     trägt die Auswahl in einen Ordner zusammen
+```
+
+### Was in den einzelnen Schritten passiert
+
+**1. Backup öffnen.** Das Backup besteht aus vier Metadatendateien und 256
+Unterverzeichnissen `00`–`ff`, in denen die Nutzdateien unter ihrer `fileID`
+liegen (SHA-1 von `"<domain>-<relativePath>"`). `Info.plist` und
+`Manifest.plist` sind auch bei verschlüsselten Backups im Klartext — daher
+funktioniert die App-Erkennung ohne Passwort.
+
+**2. Entschlüsseln, falls nötig.** Aus `Manifest.plist` kommt der Keybag; daraus
+wird per PBKDF2 der Passcode-Key abgeleitet, mit dem die Klassenschlüssel per
+AES-Key-Wrap entpackt werden. `Manifest.db` wird damit in ein temporäres
+Verzeichnis **außerhalb** des Backups entschlüsselt. Ein falsches Passwort
+scheitert an der Integritätsprüfung des Key-Wrap — es entsteht kein Datenmüll.
+
+**3. Messenger erkennen.** Nicht über geratene Pfade, sondern über den Bundle
+Identifier, der in den Backup-Metadaten tatsächlich steht. Gesucht wird ein
+Namensraum (`ch.threema.`), damit auch Varianten gefunden werden; mehrere
+Treffer führen zur Rückfrage, nicht zu einer Auswahl.
+
+**4. Medien auffinden.** Hier liegt die eigentliche Arbeit. Threema speichert
+über Core Data, und Mediendaten stecken an **zwei** Orten: als Datei in
+`.ThreemaData_SUPPORT/_EXTERNAL_DATA/` oder als Blob **in** der Datenbank. Wer
+nur Dateien kopiert, verliert die zweite Sorte stillschweigend — im
+vermessenen Backup waren das 714 Originale. Die Zuordnung zu Chats läuft über
+`ZMESSAGE` → `ZCONVERSATION`; welche Richtung einer Beziehung den
+Fremdschlüssel trägt, wird zur Laufzeit **gemessen**, weil Core Data das je
+Entität unterschiedlich ablegt.
+
+**5. Extrahieren.** Ein Planer rechnet zuerst aus, was entstehen würde — das ist
+die Grundlage von `--dry-run` *und* des echten Laufs, damit der Probelauf sich
+nicht anders verhalten kann. Dann wird jede Datei einzeln geschrieben: der
+SHA-256 der Quelle entsteht beim Schreiben, der des Ziels wird danach
+nachgelesen, und erst der Vergleich gilt als Nachweis. Eine kaputte Datei
+kostet einen Eintrag im Bericht, nicht den Lauf.
+
+**6. Ansehen und herausholen.** `msgx ui` erzeugt eine in sich geschlossene
+`index.html` aus dem Manifest. Auswählen geschieht im Browser, das Kopieren
+macht wieder die CLI — JavaScript darf auf einer `file://`-Seite lokale Dateien
+anzeigen, aber ihre Bytes nicht lesen.
+
+### Was das Programm nie tut
+
+Das Backup wird **nur gelesen**. SQLite-Verbindungen laufen mit
+`mode=ro&immutable=1`, damit nicht einmal eine `-wal`-Datei daneben entsteht.
+Geschrieben wird ausschließlich in das mit `--output` angegebene Verzeichnis,
+und ein Guard prüft jeden Zielpfad dagegen. Belegt ist das durch einen Test,
+der einen Fingerabdruck des gesamten Backups vor und nach einem vollen
+Extraktionslauf vergleicht — samt Gegenproben, dass der Fingerabdruck
+Veränderungen wirklich erkennt.
+
+Es gibt **keine Netzwerkfunktionalität**. Kein Modul des Pakets importiert
+`socket`, `urllib`, `http` oder Ähnliches; ein Test prüft das statisch und
+zusätzlich dynamisch mit gesperrtem `socket`.
+
+### Wo was liegt
+
+| Datei | Aufgabe |
+|---|---|
+| `core/backup.py` | einziger Besitzer des Backup-Pfads, alles read-only |
+| `core/keybag.py`, `core/encryption.py` | Keybag-Parsing und Entschlüsselung |
+| `core/manifest.py` | `Manifest.db` mit Schema-Introspektion |
+| `core/session.py` | bündelt Passwort, Keybag und Manifest-Zugriff |
+| `core/media.py` | Magic Bytes vor MIME vor Endung |
+| `core/paths.py` | Traversal-Abwehr, Output-Guard, Cloud-Guard |
+| `apps/base.py`, `apps/threema.py` | Messenger-Profile als Plugins |
+| `extract/planner.py`, `extract/runner.py` | Plan rechnen, dann ausführen |
+| `extract/collect.py`, `extract/verify.py` | Auswahl einsammeln, Export prüfen |
+| `ui/builder.py`, `ui/template.html` | die lokale Ansicht |
+
+Die vollständige Architektur samt aller Entscheidungen und der am echten Backup
+gemessenen Befunde steht in
+[`docs/specs/2026-08-20-messenger-backup-extractor-design.md`](docs/specs/2026-08-20-messenger-backup-extractor-design.md).
+
+## Voraussetzungen
+
+- macOS
+- Python 3.12 oder neuer
+- ein lokales Finder-Backup des iPhones
+- „Festplattenvollzugriff" für das Terminal, um
+  `~/Library/Application Support/MobileSync/Backup/` lesen zu können
+  (Systemeinstellungen → Datenschutz & Sicherheit → Festplattenvollzugriff)
+
+## Installation
+
+```bash
+python3.12 -m venv ~/.venvs/msgbackup-extractor
+~/.venvs/msgbackup-extractor/bin/pip install -e ".[dev]"
+```
+
+### Wichtig: venv nicht in iCloud Drive anlegen
+
+Liegt das virtuelle Environment innerhalb von
+`~/Library/Mobile Documents/com~apple~CloudDocs/` (iCloud Drive), setzt der
+iCloud-File-Provider auf allen `.pth`-Dateien das macOS-Flag `UF_HIDDEN`.
+Python 3.12 überspringt versteckte `.pth`-Dateien:
+
+```python
+# CPython Lib/site.py, addpackage()
+if ((getattr(st, 'st_flags', 0) & stat.UF_HIDDEN) or ...):
+    _trace(f"Skipping hidden .pth file: {fullname!r}")
+    return
+```
+
+Folge: der Editable-Install wird **stillschweigend ignoriert** und
+`import msgbackup_extractor` schlägt fehl. `chflags nohidden` hilft nicht — das
+Flag wird binnen Sekunden neu gesetzt. Deshalb liegt das venv außerhalb von
+iCloud Drive, auch wenn der Quellcode dort liegt. Nachprüfbar mit:
+
+```bash
+PYTHONVERBOSE=1 python -c "pass" 2>&1 | grep "Skipping hidden"
+```
+
+## Ablage der Daten
+
+Backup und Export gehören in ein **lokales, nicht synchronisiertes**
+Verzeichnis. Das Apple-Backup ist die gemeinsame Quelle für alle Messenger, die
+Exporte werden pro Messenger getrennt:
+
+```
+~/messenger-extract/
+├── backup/            # das Apple-Backup (read-only)
+│   └── <UDID>/
+└── export/
+    ├── threema/
+    ├── whatsapp/
+    └── signal/
+```
+
+Das Programm bricht ab, wenn `--output` in einem Cloud-Sync-Container liegt
+(iCloud Drive, Dropbox, OneDrive, Google Drive). Sonst würde macOS die
+extrahierten Daten selbsttätig hochladen.
+
 ## Verwendung
 
 ### Backups finden
@@ -299,65 +462,6 @@ endet. Das verkleinert das Zeitfenster, beseitigt es aber nicht.
 `Manifest.plist`. Darin stehen Gerät, iOS-Version, Verschlüsselungszustand und
 die erkannten Messenger samt Version — Datei- und Medienstatistiken fehlen und
 werden ausdrücklich als fehlend ausgewiesen, nicht als Null dargestellt.
-
-## Voraussetzungen
-
-- macOS
-- Python 3.12 oder neuer
-- ein lokales Finder-Backup des iPhones
-- „Festplattenvollzugriff" für das Terminal, um
-  `~/Library/Application Support/MobileSync/Backup/` lesen zu können
-  (Systemeinstellungen → Datenschutz & Sicherheit → Festplattenvollzugriff)
-
-## Installation
-
-```bash
-python3.12 -m venv ~/.venvs/msgbackup-extractor
-~/.venvs/msgbackup-extractor/bin/pip install -e ".[dev]"
-```
-
-### Wichtig: venv nicht in iCloud Drive anlegen
-
-Liegt das virtuelle Environment innerhalb von
-`~/Library/Mobile Documents/com~apple~CloudDocs/` (iCloud Drive), setzt der
-iCloud-File-Provider auf allen `.pth`-Dateien das macOS-Flag `UF_HIDDEN`.
-Python 3.12 überspringt versteckte `.pth`-Dateien:
-
-```python
-# CPython Lib/site.py, addpackage()
-if ((getattr(st, 'st_flags', 0) & stat.UF_HIDDEN) or ...):
-    _trace(f"Skipping hidden .pth file: {fullname!r}")
-    return
-```
-
-Folge: der Editable-Install wird **stillschweigend ignoriert** und
-`import msgbackup_extractor` schlägt fehl. `chflags nohidden` hilft nicht — das
-Flag wird binnen Sekunden neu gesetzt. Deshalb liegt das venv außerhalb von
-iCloud Drive, auch wenn der Quellcode dort liegt. Nachprüfbar mit:
-
-```bash
-PYTHONVERBOSE=1 python -c "pass" 2>&1 | grep "Skipping hidden"
-```
-
-## Ablage der Daten
-
-Backup und Export gehören in ein **lokales, nicht synchronisiertes**
-Verzeichnis. Das Apple-Backup ist die gemeinsame Quelle für alle Messenger, die
-Exporte werden pro Messenger getrennt:
-
-```
-~/messenger-extract/
-├── backup/            # das Apple-Backup (read-only)
-│   └── <UDID>/
-└── export/
-    ├── threema/
-    ├── whatsapp/
-    └── signal/
-```
-
-Das Programm bricht ab, wenn `--output` in einem Cloud-Sync-Container liegt
-(iCloud Drive, Dropbox, OneDrive, Google Drive). Sonst würde macOS die
-extrahierten Daten selbsttätig hochladen.
 
 ## Dependencies
 
