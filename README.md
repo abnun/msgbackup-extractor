@@ -3,8 +3,8 @@
 Lokales Kommandozeilenwerkzeug für macOS, das Messenger-Daten aus einem lokalen
 Apple-iPhone-Backup identifiziert und in eine normale Dateistruktur exportiert.
 
-Erster unterstützter Messenger ist **Threema**; die App-Erkennung ist als Plugin
-gebaut, WhatsApp und Signal sind vorgesehen.
+Unterstützt werden **Threema**, **WhatsApp** und **Signal**. Die App-Erkennung
+ist als Plugin gebaut; ein weiterer Messenger braucht nur ein neues Profil.
 
 > **Status:** in Entwicklung.
 >
@@ -18,7 +18,11 @@ gebaut, WhatsApp und Signal sind vorgesehen.
 > | `ui` | fertig |
 > | `collect` | fertig |
 >
-> Danach vorgesehen: ein zweites App-Profil (WhatsApp/Signal).
+> | Messenger | Stand |
+> |---|---|
+> | Threema | vollständig, an echten Daten erprobt |
+> | WhatsApp | vollständig, an echten Daten erprobt |
+> | Signal | erkannt, aber **nicht extrahierbar** — siehe unten |
 >
 > An einem echten Backup erprobt: iPhone, iOS, [Menge entfernt], Threema
 > [Version entfernt] — [Anzahl entfernt] Dateien / [Menge entfernt] extrahiert, 0 Fehler, 0
@@ -112,6 +116,36 @@ kostet einen Eintrag im Bericht, nicht den Lauf.
 `index.html` aus dem Manifest. Auswählen geschieht im Browser, das Kopieren
 macht wieder die CLI — JavaScript darf auf einer `file://`-Seite lokale Dateien
 anzeigen, aber ihre Bytes nicht lesen.
+
+### Die unterstützten Messenger
+
+Jeder Messenger legt seine Daten anders ab. Was sie unterscheidet, ist keine
+Kleinigkeit — es entscheidet, ob eine Extraktion überhaupt funktioniert:
+
+| | Threema | WhatsApp |
+|---|---|---|
+| Datenbank | `ThreemaData.sqlite` | `ChatStorage.sqlite` |
+| Medien | Blobs, teils **in** der Datenbank | **Dateien** unter `Message/Media/` |
+| Referenz | `0x02` + UUID → `_EXTERNAL_DATA/` | Pfad in der DB, Präfix `Message/` fehlt |
+| Vorschaubilder | Blob in `ZIMAGEDATA` | Datei über `ZXMPPTHUMBPATH` |
+| Chat | `ZCONVERSATION` | `ZWACHATSESSION.ZPARTNERNAME` |
+| Beziehungsrichtung | eine Seite **verwaist** | beide tragen |
+
+Beide sind Core-Data-Stores und teilen deshalb die Zeitrechnung (ab 2001) und
+das Vermessen der Beziehungsrichtungen. Dass die Richtung **gemessen** und nicht
+angenommen wird, ist bei Threema notwendig: dort ist `ZIMAGEDATA.ZMESSAGE` zu
+100 % verwaist, und wer dort joint, hält die Chat-Zuordnung für unmöglich.
+
+#### Signal ist nicht extrahierbar
+
+Signal wird erkannt, aber es gibt nichts zu holen: die App schließt ihr
+Datenverzeichnis vom iOS-Backup aus. Im gemessenen Backup lagen in fünf
+Signal-Domains insgesamt **zwölf Dateien mit 41 KB** — Einstellungs-Plists,
+WebKit-Caches, eine Lock-Datei. Keine Nachrichtendatenbank, keine Medien.
+
+Das Profil existiert genau deshalb: damit der Bericht den Grund nennt, statt
+dass ein leeres Ergebnis wie ein Fehler dieses Programms aussieht. Signal-Daten
+überträgt man mit Signals eigenem Weg (Gerätewechsel oder Signal-Backup).
 
 ### Was das Programm nie tut
 
@@ -300,11 +334,21 @@ Ergebnis, ohne [Anzahl entfernt] Bilder im Finder zu scrollen.
 ### Ansehen
 
 ```bash
+# Ein Messenger
 msgx ui --output "~/messenger-extract/export/threema"
+
+# Alle Messenger auf einer Seite
+msgx ui --output "~/messenger-extract/export"
 ```
 
-Erzeugt `index.html` im Exportverzeichnis. Doppelklick genügt — es braucht
-keinen Server.
+Erzeugt `index.html`. Doppelklick genügt — es braucht keinen Server.
+
+Zeigt `--output` auf ein **Exportverzeichnis**, entsteht eine Seite für diesen
+Messenger. Zeigt es auf ein Verzeichnis, das mehrere Exporte enthält, entsteht
+**eine gemeinsame Seite** mit einem Umschalter oben rechts (`Alle | Threema |
+WhatsApp`) und dem Messenger als weiterer Filterdimension. Chatzeilen tragen
+dann eine Messenger-Kennzeichnung, weil sich Chatnamen zwischen Messengern
+wiederholen können.
 
 Die Seite ist **in sich geschlossen**: kein CDN, keine externen Fonts, keine
 Netzverbindung, keine Telemetrie. Symbole sind eingebettetes SVG statt Emoji,

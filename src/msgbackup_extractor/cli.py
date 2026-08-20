@@ -54,7 +54,9 @@ from msgbackup_extractor.extraction import ExtractionBlocked, Extractor
 from msgbackup_extractor.models import MediaCategory
 from msgbackup_extractor.ui.builder import (
     UiBuildError,
+    build_combined_index,
     build_index,
+    discover_exports,
     load_raw_manifest,
     write_page,
 )
@@ -321,7 +323,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         metavar="PFAD",
         required=True,
-        help="Das Ausgabeverzeichnis eines Exports oder dessen export-manifest.json.",
+        help=(
+            "Das Ausgabeverzeichnis eines Exports, dessen export-manifest.json, "
+            "oder ein Verzeichnis mit mehreren Exporten - dann entsteht eine "
+            "gemeinsame Seite mit Umschaltung zwischen den Messengern."
+        ),
     )
     ui.add_argument("--verbose", action="store_true", help="Technische Details.")
     ui.set_defaults(handler=_command_ui)
@@ -730,34 +736,50 @@ def _command_extract(arguments: argparse.Namespace) -> int:
 
 def _command_ui(arguments: argparse.Namespace) -> int:
     path = arguments.output.expanduser()
-    manifest_path = path / export_manifest.MANIFEST_NAME if path.is_dir() else path
+    single = path / export_manifest.MANIFEST_NAME if path.is_dir() else path
 
     try:
-        raw = load_raw_manifest(manifest_path)
-        manifest = export_manifest.load(manifest_path)
-        index = build_index(manifest, raw=raw)
+        if single.is_file():
+            # Ein einzelner Export.
+            manifest = export_manifest.load(single)
+            index = build_index(manifest, raw=load_raw_manifest(single))
+            target_dir = manifest.output_dir
+        else:
+            # Ein Verzeichnis mit mehreren Exporten: eine gemeinsame Seite,
+            # damit man die Messenger in einer Zeitachse durchsehen und
+            # zwischen ihnen umschalten kann.
+            if not path.is_dir():
+                print(f"Fehler: {path} ist kein Verzeichnis.", file=sys.stderr)
+                return EXIT_ERROR
+            exports = discover_exports(path)
+            index = build_combined_index(
+                exports, export_manifest.load, load_raw_manifest
+            )
+            target_dir = path
     except (UiBuildError, InvalidManifest) as error:
         print(f"Fehler: {error}", file=sys.stderr)
         return EXIT_ERROR
 
-    target = write_page(index, manifest.output_dir)
+    target = write_page(index, target_dir)
     counts = index["counts"]
 
-    lines = [
-        "Lokale Ansicht erzeugt",
-        "=" * len("Lokale Ansicht erzeugt"),
-        "",
-        f"Datei:              {target}",
+    lines = ["Lokale Ansicht erzeugt", "=" * len("Lokale Ansicht erzeugt"), ""]
+    lines.append(f"Datei:              {target}")
+    for source in index.get("sources", ()):
+        lines.append(
+            f"  {source['label']:<16} {reports.format_count(source['entries']):>9} Medien"
+        )
+    lines += [
         f"Medien:             {reports.format_count(counts['entries'])}",
         f"mit Vorschaubild:   {reports.format_count(counts['paired'])}",
     ]
-    if counts["preview_only"]:
+    if counts.get("preview_only"):
         lines.append(
             f"nur Vorschaubild:   {reports.format_count(counts['preview_only'])}"
         )
-    if counts["without_chat"]:
+    if counts.get("without_chat"):
         lines.append(f"ohne Chat:          {reports.format_count(counts['without_chat'])}")
-    if counts["without_date"]:
+    if counts.get("without_date"):
         lines.append(f"ohne Datum:         {reports.format_count(counts['without_date'])}")
     lines += [
         f"Chats:              {reports.format_count(len(index['chats']))}",

@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from msgbackup_extractor.apps.base import AppProfile
+from msgbackup_extractor.apps.signal import SignalProfile
 from msgbackup_extractor.apps.threema import ThreemaProfile
+from msgbackup_extractor.apps.whatsapp import WhatsAppProfile
 from msgbackup_extractor.models import BackupInfo, DetectionResult, DetectionStatus
 
-#: Alle bekannten Profile. WhatsApp und Signal kommen hier dazu.
-_PROFILES: tuple[type[AppProfile], ...] = (ThreemaProfile,)
+#: Alle bekannten Profile.
+_PROFILES: tuple[type[AppProfile], ...] = (
+    SignalProfile,
+    ThreemaProfile,
+    WhatsAppProfile,
+)
 
 
 def available_profiles() -> tuple[AppProfile, ...]:

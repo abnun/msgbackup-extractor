@@ -25,6 +25,7 @@ from tests.support.backup_builder import (
     core_data_database,
 )
 from tests.support.threema_fixture import ThreemaFixture, build_threema_store
+from tests.support.whatsapp_fixture import WhatsAppFixture, build_whatsapp_store
 
 #: Realistische Datei-Signaturen fuer die Medienerkennung.
 JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
@@ -218,3 +219,57 @@ def extract(
             options=options or ExtractOptions(),
             **kwargs,  # type: ignore[arg-type]
         ).run()
+
+
+# ---------------------------------------------------------------------------
+# WhatsApp
+# ---------------------------------------------------------------------------
+
+WHATSAPP_BUNDLE_ID = "net.whatsapp.WhatsApp"
+
+
+@dataclass(slots=True)
+class WhatsAppBackup:
+    """Ein Backup mit WhatsApp-Daten plus die Erwartungswerte des Fixtures."""
+
+    backup: BuiltBackup
+    fixture: WhatsAppFixture
+
+    @property
+    def path(self) -> Path:
+        return self.backup.path
+
+
+@pytest.fixture
+def whatsapp_backup(tmp_path: Path) -> WhatsAppBackup:
+    fixture = build_whatsapp_store()
+    backup = build_backup(
+        tmp_path / "whatsapp",
+        fixture.backup_files(),
+        installed_applications=[WHATSAPP_BUNDLE_ID],
+        application_versions={WHATSAPP_BUNDLE_ID: "1041553870.0"},
+    )
+    return WhatsAppBackup(backup=backup, fixture=fixture)
+
+
+@pytest.fixture
+def signal_backup(tmp_path: Path) -> BuiltBackup:
+    """Backup mit installiertem Signal - aber ohne dessen Daten.
+
+    Genau die Lage im echten Backup: Einstellungen und Caches, keine
+    Nachrichtendatenbank.
+    """
+    return build_backup(
+        tmp_path / "signal",
+        [
+            BackupFile("AppDomain-org.whispersystems.signal",
+                       "Library/Preferences/org.whispersystems.signal.plist",
+                       b"bplist00" + b"\x00" * 40),
+            BackupFile("AppDomainGroup-group.org.whispersystems.signal.group",
+                       "storedPrimaryFolderName.txt", b"Signal\n"),
+            BackupFile("AppDomainGroup-group.org.whispersystems.signal.group",
+                       "chat-connection.lock", b""),
+        ],
+        installed_applications=["org.whispersystems.signal"],
+        application_versions={"org.whispersystems.signal": "1799.0"},
+    )

@@ -34,6 +34,7 @@ from msgbackup_extractor.core.manifest import (
 )
 from msgbackup_extractor.core.session import BackupSession
 from msgbackup_extractor.core.sqlite_ro import (
+    SQLITE_MAGIC,
     NotASQLiteDatabase,
     describe_database,
     open_readonly,
@@ -387,49 +388,51 @@ class Analyzer:
 
     # -- Medien -------------------------------------------------------------
 
-    def _probe(self, entry: ManifestEntry) -> tuple[MediaType | None, str | None]:
-        """Liest den Kopf einer Nutzdatei und bestimmt den Typ.
+    def _head(self, entry: ManifestEntry, length: int) -> tuple[bytes | None, str | None]:
+        """Liest die ersten `length` Bytes einer Nutzdatei, notfalls entschluesselt.
 
-        Gibt `(None, grund)` zurueck, wenn die Datei fehlt oder unlesbar ist -
-        beides sind normale Befunde in echten Backups, kein Abbruchgrund.
+        Die Laenge ist ein Parameter, weil die Kosten daran haengen: um eine
+        SQLite-Datenbank zu erkennen genuegen 16 Byte, fuer die Medienerkennung
+        braucht es einige Kilobyte. Am echten Backup gemessen ist der
+        Unterschied bei [Anzahl entfernt] Dateien 5,7 gegen [Dauer entfernt].
         """
         path = self.backup.payload_path(entry.file_id)
         if not path.is_file():
             return None, "missing"
+
+        if entry.is_encrypted:
+            keys = self.session.keys
+            if keys is None or entry.protection_class is None:
+                return None, "undecryptable"
+            try:
+                with keys.unwrap_file_key(entry.protection_class, entry.encryption_key) as key:
+                    return decrypt_head(path, key, length), None
+            except DecryptionError:
+                return None, "undecryptable"
+            except OSError:
+                return None, "unreadable"
+
+        if self.backup.is_encrypted:
+            # Verschluesseltes Backup, aber kein Schluessel im Eintrag: der
+            # Inhalt ist Chiffrat. Siehe `_inspect`.
+            return None, "undecryptable"
+
         try:
             with path.open("rb") as handle:
-                header = handle.read(_PROBE_SIZE)
-        except OSError as error:
-            logger.debug("Nutzdatei %s nicht lesbar: %s", entry.file_id, type(error).__name__)
-            return None, "unreadable"
-        return media_module.detect(header, filename=entry.relative_path), None
-
-    def _probe_encrypted(self, entry: ManifestEntry) -> tuple[MediaType | None, str | None]:
-        """Wie `_probe`, entschluesselt aber vorher den Dateianfang.
-
-        Bei AES-CBC genuegt der Anfang der Datei: ein Klartextblock haengt nur
-        vom eigenen und vom vorherigen Chiffratblock ab. Grosse Videos muessen
-        fuer die Typerkennung also nicht vollstaendig entschluesselt werden.
-        """
-        keys = self.session.keys
-        if keys is None or entry.encryption_key is None or entry.protection_class is None:
-            return None, "encrypted"
-
-        path = self.backup.payload_path(entry.file_id)
-        if not path.is_file():
-            return None, "missing"
-
-        try:
-            with keys.unwrap_file_key(entry.protection_class, entry.encryption_key) as key:
-                header = decrypt_head(path, key, _PROBE_SIZE)
-        except DecryptionError as error:
-            logger.debug(
-                "Nutzdatei %s nicht entschluesselbar: %s", entry.file_id, type(error).__name__
-            )
-            return None, "undecryptable"
+                return handle.read(length), None
         except OSError:
             return None, "unreadable"
 
+    def _is_sqlite(self, entry: ManifestEntry) -> bool:
+        """Ist das eine SQLite-Datenbank? Kostet 16 Byte statt einiger Kilobyte."""
+        head, _ = self._head(entry, len(SQLITE_MAGIC))
+        return head is not None and head.startswith(SQLITE_MAGIC)
+
+    def _probe(self, entry: ManifestEntry) -> tuple[MediaType | None, str | None]:
+        """Bestimmt den Medientyp aus dem Dateikopf."""
+        header, reason = self._head(entry, _PROBE_SIZE)
+        if header is None:
+            return None, reason
         if not header:
             return None, "unreadable"
         return media_module.detect(header, filename=entry.relative_path), None
@@ -437,16 +440,13 @@ class Analyzer:
     def _inspect(self, entry: ManifestEntry) -> tuple[MediaType | None, str | None]:
         """Bestimmt den Typ einer Datei, verschluesselt oder nicht.
 
-        Wichtig ist der dritte Fall: in einem verschluesselten Backup sind alle
-        Nutzdateien verschluesselt. Fehlt der Schluessel im Manifest-Eintrag -
-        etwa weil dessen MBFile-Blob unlesbar war -, dann ist der Inhalt
-        Chiffrat. Ihn wie Klartext zu untersuchen wuerde einen Typ *erfinden*.
-        Solche Eintraege gelten deshalb als nicht entschluesselbar.
+        Beides laeuft ueber `_head()`, damit es nur einen Leseweg gibt. Wichtig
+        ist der dort behandelte dritte Fall: in einem verschluesselten Backup
+        sind alle Nutzdateien verschluesselt. Fehlt der Schluessel im
+        Manifest-Eintrag - etwa weil dessen MBFile-Blob unlesbar war -, dann ist
+        der Inhalt Chiffrat. Ihn wie Klartext zu untersuchen wuerde einen Typ
+        *erfinden*. Solche Eintraege gelten deshalb als nicht entschluesselbar.
         """
-        if entry.is_encrypted:
-            return self._probe_encrypted(entry)
-        if self.backup.is_encrypted:
-            return None, "undecryptable"
         return self._probe(entry)
 
     def _summarise_media(self, files: tuple[ManifestEntry, ...]) -> MediaSummary:
@@ -553,6 +553,10 @@ class Analyzer:
         for entry in files:
             path = self.backup.payload_path(entry.file_id)
             if not path.is_file():
+                continue
+            # Zuerst die 16-Byte-Signatur: von jeder Datei mehrere Kilobyte zu
+            # lesen kostete bei [Anzahl entfernt] WhatsApp-Dateien 79 statt [Dauer entfernt].
+            if not self._is_sqlite(entry):
                 continue
             detected, _ = self._inspect(entry)
             if detected is None or detected.category is not MediaCategory.DATABASE:

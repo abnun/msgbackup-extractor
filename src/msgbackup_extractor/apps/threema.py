@@ -12,15 +12,16 @@ Genau diese Merkmale werden geprueft. Welche Entitaet welchen Zweck hat, wird
 aus dem Namen abgeleitet - und wenn das nicht eindeutig ist, lautet die Rolle
 `unknown` mit Begruendung, statt geraten zu werden.
 
-Die eigentliche Chat-Zuordnung (`link_media`) bleibt bis Phase 5 unimplementiert
-und liefert bis dahin nichts. Sie wird auf Basis des real vorgefundenen Schemas
-gebaut, nicht auf Basis von Annahmen.
+Die Chat-Zuordnung (`enumerate_media`) ist auf Basis des am echten Backup
+vermessenen Schemas gebaut, nicht auf Basis von Annahmen. Welche Richtung einer
+Beziehung den Fremdschluessel traegt, wird zur Laufzeit gemessen - siehe
+`_ThreemaReader.carrying_links`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Final
 
 from msgbackup_extractor.apps.base import (
@@ -30,6 +31,9 @@ from msgbackup_extractor.apps.base import (
     MediaContext,
     MediaEnumeration,
 )
+from msgbackup_extractor.apps.core_data import CORE_DATA_MARKERS as _MARKERS
+from msgbackup_extractor.apps.core_data import apple_datetime as _apple_datetime
+from msgbackup_extractor.apps.core_data import quote as _quote
 from msgbackup_extractor.core.logging_setup import get_logger
 from msgbackup_extractor.models import (
     ChatReference,
@@ -41,8 +45,8 @@ from msgbackup_extractor.models import (
 
 logger = get_logger("threema")
 
-#: Verwaltungstabellen, die jeden Core-Data-Store ausweisen.
-CORE_DATA_MARKERS: Final = ("Z_METADATA", "Z_PRIMARYKEY")
+#: Verwaltungstabellen, die jeden Core-Data-Store ausweisen (gemeinsam).
+CORE_DATA_MARKERS: Final = _MARKERS
 
 #: Namensbestandteile, die auf eine Rolle hindeuten. Reihenfolge = Priorität.
 _ROLE_HINTS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
@@ -254,35 +258,6 @@ def is_external_reference(blob: bytes | memoryview | None) -> bool:
 def external_reference_name(blob: bytes | memoryview) -> str:
     """Der Dateiname, auf den eine Referenz zeigt."""
     return bytes(blob)[1:-1].decode("ascii")
-
-
-def _apple_datetime(value: object, *, now: datetime | None = None) -> datetime | None:
-    """Core-Data-Zeitstempel (Sekunden seit 2001) in ein `datetime`.
-
-    Anders als MBFile zaehlt Core Data ab 2001 - das ist am echten Backup
-    belegt: die so umgerechneten Nachrichtendaten liegen zwischen 2017 und
-    heute, waehrend dieselben Werte als Unix-Zeit in den Neunzigern landen
-    wuerden.
-
-    Die Obergrenze ist "jetzt" mit einem Tag Spielraum: eine Nachricht kann
-    nicht in der Zukunft gesendet worden sein. Unplausible Werte werden zu
-    None, weil eine erfundene Zeit schlimmer ist als keine.
-    """
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
-        return None
-    try:
-        stamp = _APPLE_EPOCH + timedelta(seconds=float(value))
-    except (OverflowError, ValueError, OSError):
-        return None
-    upper = (now or datetime.now(UTC)) + timedelta(days=1)
-    if not (datetime(2007, 1, 1, tzinfo=UTC) <= stamp <= upper):
-        logger.debug("Unplausibler Core-Data-Zeitstempel verworfen: %s", stamp.isoformat())
-        return None
-    return stamp
-
-
-def _quote(identifier: str) -> str:
-    return '"' + identifier.replace('"', '""') + '"'
 
 
 @dataclass(frozen=True, slots=True)

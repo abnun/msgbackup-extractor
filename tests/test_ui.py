@@ -26,7 +26,7 @@ from msgbackup_extractor.ui.builder import (
     render_page,
     write_page,
 )
-from tests.conftest import TEST_PASSWORD, ThreemaBackup, extract
+from tests.conftest import TEST_PASSWORD, ThreemaBackup, WhatsAppBackup, extract
 
 
 def _export(target: ThreemaBackup, output: Path, **kwargs: object) -> Path:
@@ -261,8 +261,18 @@ def test_cli_ui_accepts_the_manifest_path(
 def test_cli_ui_reports_a_missing_manifest(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Ein Verzeichnis ohne Export soll sagen, was es erwartet haette."""
     assert main(["ui", "--output", str(tmp_path)]) == EXIT_ERROR
-    assert "keine Datei" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "kein Export gefunden" in error
+    assert "export-manifest.json" in error
+
+
+def test_cli_ui_reports_a_missing_manifest_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["ui", "--output", str(tmp_path / "fehlt.json")]) == EXIT_ERROR
+    assert "kein Verzeichnis" in capsys.readouterr().err
 
 
 def test_cli_ui_works_for_an_encrypted_backup(
@@ -452,3 +462,133 @@ def test_options_leading_nowhere_are_disabled(export_dir: Path) -> None:
     """
     html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
     assert "facet.button.disabled = n === 0 && !pressed" in html
+
+
+# ---------------------------------------------------------------------------
+# Mehrere Messenger auf einer Seite
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def combined_root(
+    threema_backup: ThreemaBackup, whatsapp_backup: WhatsAppBackup, tmp_path: Path
+) -> Path:
+    """Ein Verzeichnis mit zwei Exporten, wie `~/messenger-extract/export`."""
+    from msgbackup_extractor.core.backup import AppleBackup
+    from msgbackup_extractor.core.session import BackupSession
+    from msgbackup_extractor.extraction import Extractor
+
+    root = tmp_path / "export"
+    _export(threema_backup, root / "threema")
+    with BackupSession(AppleBackup(whatsapp_backup.path)) as session:
+        outcome = Extractor(
+            session=session, output_dir=root / "whatsapp", app_slug="whatsapp"
+        ).run()
+    payload = export_manifest.build(
+        outcome.result, app="whatsapp", backup_udid="TEST", tool_version="0"
+    )
+    export_manifest.write(payload, root / "whatsapp")
+    return root
+
+
+def _combined(root: Path) -> dict:
+    from msgbackup_extractor.ui.builder import build_combined_index, discover_exports
+
+    return build_combined_index(
+        discover_exports(root), export_manifest.load, load_raw_manifest
+    )
+
+
+def test_exports_are_discovered(combined_root: Path) -> None:
+    from msgbackup_extractor.ui.builder import discover_exports
+
+    found = discover_exports(combined_root)
+    assert {ref.directory for ref in found} == {"threema", "whatsapp"}
+
+
+def test_messenger_labels_come_from_the_profiles(combined_root: Path) -> None:
+    """Aus dem Slug "whatsapp" wuerde sonst "Whatsapp"."""
+    index = _combined(combined_root)
+    assert index["messengers"] == ["Threema", "WhatsApp"]
+
+
+def test_combined_paths_are_prefixed_and_resolve(combined_root: Path) -> None:
+    index = _combined(combined_root)
+    assert index["items"]
+    for item in index["items"]:
+        assert item["p"].split("/", 1)[0] in {"threema", "whatsapp"}
+        assert (combined_root / item["p"]).is_file(), item["p"]
+        if item.get("v"):
+            assert (combined_root / item["v"]).is_file(), item["v"]
+
+
+def test_every_item_names_its_messenger(combined_root: Path) -> None:
+    index = _combined(combined_root)
+    for item in index["items"]:
+        assert item["g"] in range(len(index["messengers"]))
+
+
+def test_chats_carry_their_messenger(combined_root: Path) -> None:
+    """Chatnamen koennen sich wiederholen - sonst verschmelzen zwei zu einem."""
+    index = _combined(combined_root)
+    assert len(index["chat_messengers"]) == len(index["chats"])
+    assert set(index["chat_messengers"]) == set(range(len(index["messengers"])))
+
+
+def test_chat_indices_are_remapped_correctly(combined_root: Path) -> None:
+    """Ein Chat muss zum Messenger seiner Medien passen."""
+    index = _combined(combined_root)
+    for item in index["items"]:
+        if "c" in item:
+            assert index["chat_messengers"][item["c"]] == item["g"]
+
+
+def test_combined_items_are_globally_sorted(combined_root: Path) -> None:
+    index = _combined(combined_root)
+    dated = [i["t"] for i in index["items"] if "t" in i]
+    assert dated == sorted(dated, reverse=True)
+
+
+def test_combined_counts_add_up(combined_root: Path) -> None:
+    index = _combined(combined_root)
+    assert index["counts"]["entries"] == len(index["items"])
+    assert index["counts"]["messengers"] == 2
+    assert sum(s["entries"] for s in index["sources"]) == len(index["items"])
+
+
+def test_page_has_a_messenger_switch(combined_root: Path) -> None:
+    page = write_page(_combined(combined_root), combined_root)
+    html = page.read_text(encoding="utf-8")
+    assert 'id="switch"' in html
+    assert "function buildSwitch()" in html
+    # Der Schalter wirkt ausschliessend, nicht als Mehrfachfilter.
+    assert "state.messengers.clear();" in html
+
+
+def test_switch_is_hidden_for_a_single_messenger(export_dir: Path) -> None:
+    """Bei einem Messenger waere ein Umschalter sinnlos."""
+    page = write_page(_index(export_dir), export_dir)
+    html = page.read_text(encoding="utf-8")
+    assert 'class="switch" id="switch"' in html
+    assert "if (messengers.length < 2) return;" in html
+
+
+def test_messenger_is_part_of_the_filter_predicate(combined_root: Path) -> None:
+    html = write_page(_combined(combined_root), combined_root).read_text(encoding="utf-8")
+    assert "const groups = over.messengers ?? state.messengers;" in html
+    assert "groups.size && !(it.g !== undefined && groups.has(it.g))" in html
+
+
+def test_cli_ui_builds_a_combined_page(
+    combined_root: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["ui", "--output", str(combined_root)]) == EXIT_OK
+    output = capsys.readouterr().out
+    assert "Threema" in output and "WhatsApp" in output
+    assert (combined_root / PAGE_NAME).is_file()
+
+
+def test_combined_page_is_still_self_contained(combined_root: Path) -> None:
+    html = write_page(_combined(combined_root), combined_root).read_text(encoding="utf-8")
+    for marker in ("http://", "https://", "fetch(", "XMLHttpRequest", "download="):
+        assert marker not in html

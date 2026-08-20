@@ -66,6 +66,29 @@ header {
 header h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
 header .meta { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 header .spacer { flex: 1; }
+.switch {
+  display: inline-flex; gap: 2px; padding: 2px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px;
+}
+.switch[hidden] { display: none; }
+.switch button {
+  padding: 5px 12px; border: 0; border-radius: 7px; cursor: pointer;
+  background: transparent; font-size: 12.5px; white-space: nowrap;
+}
+.switch button:hover { color: var(--accent); }
+.switch button[aria-pressed="true"] {
+  background: var(--panel); color: var(--accent); font-weight: 650;
+  box-shadow: 0 1px 2px rgba(0,0,0,.08);
+}
+.switch button .n {
+  margin-left: 6px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.switch button[aria-pressed="true"] .n { color: inherit; opacity: .7; }
+.row .via {
+  margin-left: 6px; padding: 1px 5px; border-radius: 4px;
+  background: var(--panel-2); color: var(--muted); font-size: 10px; font-weight: 600;
+}
+
 #search {
   width: 260px; padding: 7px 11px;
   background: var(--panel-2); color: var(--text);
@@ -328,6 +351,7 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
   <h1>Messenger-Export</h1>
   <span class="meta" id="head-meta"></span>
   <span class="spacer"></span>
+  <div class="switch" id="switch" role="group" aria-label="Messenger" hidden></div>
   <input id="search" type="search" placeholder="Dateiname suchen…" autocomplete="off"
          spellcheck="false" aria-label="Dateiname suchen">
 </header>
@@ -515,7 +539,11 @@ const DATA = /*__INDEX__*/;
 
   /* --- Zustand ---------------------------------------------------------- */
 
+  const messengers = DATA.messengers || [];
+  const chatMessengers = DATA.chat_messengers || [];
+
   const state = {
+    messengers: new Set(),
     kinds: new Set(), years: new Set(), chats: new Set(), flags: new Set(), q: "",
   };
   let filtered = items;
@@ -528,8 +556,8 @@ const DATA = /*__INDEX__*/;
 
   function filterActive() {
     return Boolean(
-      state.kinds.size || state.years.size || state.chats.size ||
-      state.flags.size || state.q.trim()
+      state.messengers.size || state.kinds.size || state.years.size ||
+      state.chats.size || state.flags.size || state.q.trim()
     );
   }
 
@@ -538,6 +566,7 @@ const DATA = /*__INDEX__*/;
   // Zumutung: er wuerde je nach unsichtbarem Zustand etwas voellig anderes tun.
   function filterLabel() {
     const parts = [];
+    for (const g of state.messengers) parts.push(messengers[g]);
     for (const k of state.kinds) parts.push(KIND_LABEL[k] || k);
     for (const y of [...state.years].sort((a, b) => b - a)) parts.push(String(y));
     for (const c of state.chats) parts.push(chats[c]);
@@ -552,12 +581,14 @@ const DATA = /*__INDEX__*/;
   // getrennte Implementierungen wuerden mit Sicherheit auseinanderlaufen, und
   // dann zeigt die Seitenleiste Zahlen, die zum Ergebnis nicht passen.
   function makePredicate(over) {
+    const groups = over.messengers ?? state.messengers;
     const kinds = over.kinds ?? state.kinds;
     const years = over.years ?? state.years;
     const chats = over.chats ?? state.chats;
     const flags = over.flags ?? state.flags;
     const q = state.q.trim().toLowerCase();
     return (it) => {
+      if (groups.size && !(it.g !== undefined && groups.has(it.g))) return false;
       if (kinds.size && !kinds.has(it.k)) return false;
       if (years.size && !(it._y && years.has(it._y))) return false;
       if (chats.size && !(it.c !== undefined && chats.has(it.c))) return false;
@@ -607,6 +638,53 @@ const DATA = /*__INDEX__*/;
     apply();
   }
 
+  // Der Umschalter wirkt ausschliessend: ein Klick zeigt genau einen
+  // Messenger, "Alle" hebt die Einschraenkung auf. Ein Mehrfachfilter waere
+  // hier verwirrend, weil der Schalter wie ein Reiter aussieht.
+  function buildSwitch() {
+    const host = document.getElementById("switch");
+    if (messengers.length < 2) return;
+    host.hidden = false;
+
+    const all = document.createElement("button");
+    all.type = "button";
+    all.setAttribute("aria-pressed", "true");
+    all.dataset.value = "";
+    all.append(document.createTextNode("Alle"));
+    const allCount = document.createElement("span");
+    allCount.className = "n";
+    all.append(allCount);
+    host.append(all);
+    switchButtons.push({ button: all, value: null, number: allCount });
+
+    messengers.forEach((label, index) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("aria-pressed", "false");
+      b.append(document.createTextNode(label));
+      const n = document.createElement("span");
+      n.className = "n";
+      b.append(n);
+      host.append(b);
+      switchButtons.push({ button: b, value: index, number: n });
+    });
+
+    for (const item of switchButtons) {
+      item.button.addEventListener("click", () => {
+        state.messengers.clear();
+        if (item.value !== null) state.messengers.add(item.value);
+        for (const other of switchButtons) {
+          other.button.setAttribute(
+            "aria-pressed", other === item ? "true" : "false"
+          );
+        }
+        apply();
+      });
+    }
+  }
+
+  const switchButtons = [];
+
   function buildFilters() {
     const kinds = document.getElementById("kinds");
     for (const k of ["image", "video", "audio", "document", "internal", "other"]) {
@@ -646,10 +724,21 @@ const DATA = /*__INDEX__*/;
       const label = document.createElement("span");
       label.className = "label";
       label.textContent = name;
+      b.append(label);
+      // Chatnamen koennen sich zwischen Messengern wiederholen - dann muss
+      // dranstehen, welcher gemeint ist.
+      if (messengers.length > 1 && chatMessengers[index] !== undefined) {
+        const via = document.createElement("span");
+        via.className = "via";
+        via.textContent = messengers[chatMessengers[index]];
+        b.append(via);
+      }
       const n = document.createElement("span");
       n.className = "n";
-      b.append(label, n);
-      b.title = name;
+      b.append(n);
+      b.title = messengers.length > 1 && chatMessengers[index] !== undefined
+        ? `${name} · ${messengers[chatMessengers[index]]}`
+        : name;
       b.addEventListener("click", () => { if (!b.disabled) toggle(state.chats, index, b); });
       facets.push({ button: b, number: n, over: () => ({ chats: new Set([index]) }) });
       list.append(b);
@@ -667,6 +756,12 @@ const DATA = /*__INDEX__*/;
   // zu nichts fuehrt, wird abgeblendet statt eine Zahl zu zeigen, die zu einer
   // leeren Ansicht fuehrt.
   function updateFacets() {
+    for (const item of switchButtons) {
+      const over = item.value === null
+        ? { messengers: new Set() }
+        : { messengers: new Set([item.value]) };
+      item.number.textContent = num(countWith(over));
+    }
     for (const facet of facets) {
       const n = countWith(facet.over());
       facet.number.textContent = num(n);
@@ -679,9 +774,12 @@ const DATA = /*__INDEX__*/;
   }
 
   document.getElementById("reset").addEventListener("click", () => {
+    state.messengers.clear();
     state.kinds.clear(); state.years.clear(); state.chats.clear(); state.flags.clear();
     state.q = "";
     document.getElementById("search").value = "";
+    switchButtons.forEach((item, position) =>
+      item.button.setAttribute("aria-pressed", position === 0 ? "true" : "false"));
     // Nur die Filterknoepfe zuruecksetzen - die Auswahl der Kacheln bleibt.
     document.querySelectorAll('aside [aria-pressed="true"]')
       .forEach((b) => b.setAttribute("aria-pressed", "false"));
@@ -697,7 +795,9 @@ const DATA = /*__INDEX__*/;
   /* --- Kopf- und Statuszeile -------------------------------------------- */
 
   document.getElementById("head-meta").textContent = [
-    DATA.app ? DATA.app.charAt(0).toUpperCase() + DATA.app.slice(1) : "unbekannt",
+    messengers.length > 1
+      ? `${messengers.length} Messenger`
+      : (DATA.app ? DATA.app.charAt(0).toUpperCase() + DATA.app.slice(1) : "unbekannt"),
     `${num(counts.entries || 0)} Medien`,
     `${size(counts.item_bytes)} Originale`,
     `Export ${size(counts.total_bytes)}`,
@@ -1004,10 +1104,14 @@ const DATA = /*__INDEX__*/;
 
     document.getElementById("v-title").textContent = it.n || it.p.split("/").pop();
 
-    const rows = [
+    const rows = [];
+    if (messengers.length > 1 && it.g !== undefined) {
+      rows.push(["Messenger", messengers[it.g]]);
+    }
+    rows.push(
       ["Chat", it.c !== undefined ? chats[it.c] : "keine Zuordnung"],
       ["Nachricht vom", it.t ? fullDate(it.t) : "nicht bekannt"],
-    ];
+    );
     if (it.f) rows.push(["Datei geändert", fullDate(it.f)]);
     rows.push(
       ["Typ", it.m || "unbekannt"],
@@ -1158,6 +1262,7 @@ const DATA = /*__INDEX__*/;
 
   /* --- Start ------------------------------------------------------------ */
 
+  buildSwitch();
   buildFilters();
   apply();
 })();

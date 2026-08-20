@@ -564,7 +564,7 @@ gebaute Artefakt, weil alles Weitere darauf aufbaut.
 | 3 | Vollständige Testsuite für Phase 0–2 | **Nutzer führt `analyze` auf echtem Backup aus und liefert anonymisierten Bericht** |
 | 4 | `extract` + `verify`: `planner`, `runner`, `--dry-run`, `--deduplicate`, Export-Manifest, Integrität, Tests | **erledigt** |
 | 5 | `database`-Subcommand + `--organize-by-chat` auf Basis des real vorgefundenen Schemas | **erledigt** |
-| 6 | README vollständig + zweites App-Profil (WhatsApp oder Signal) zur Validierung des Interfaces | — |
+| 6 | README vollständig + zweites App-Profil (WhatsApp oder Signal) zur Validierung des Interfaces | **erledigt** |
 | 7 | Lokales UI zum Durchsehen des Exports (siehe §18) | **erledigt** |
 
 ---
@@ -895,3 +895,99 @@ Filter auf „Videos", „Alle im Filter auswählen", Übergabedialog, dann
 | Laufzeit | unter einer Sekunde |
 
 Der Export blieb dabei unverändert.
+
+
+---
+
+## 23. Nachtrag: WhatsApp und Signal (2026-08-20)
+
+### 23.1 Was das `AppProfile`-Interface aushalten musste
+
+Das Interface war an Threema gebaut. WhatsApp hat es auf die Probe gestellt, und
+zwar an der entscheidenden Stelle: Threema speichert Medien als **Blobs**
+(teils in der Datenbank, teils in `_EXTERNAL_DATA` mit UUID-Referenz), WhatsApp
+als **Dateien**, deren Pfad in der Datenbank steht.
+
+Das Interface hat gehalten, ohne Änderung: `MediaContext.entries_by_path` war
+für Threema schon da und ist für WhatsApp genau der nötige Zugriff. Nur die
+gemeinsame Core-Data-Schicht (`apps/core_data.py`) kam hinzu — Zeitrechnung,
+Identifier-Quoting und das Vermessen von Beziehungsrichtungen, damit es davon
+nicht zwei Implementierungen gibt.
+
+### 23.2 WhatsApp, am echten Backup vermessen
+
+| | |
+|---|---|
+| Bundle Identifier | `net.whatsapp.WhatsApp`, Version [Version entfernt] |
+| Domain mit den Daten | `AppDomainGroup-group.net.whatsapp.WhatsApp.shared` |
+| Umfang | [Anzahl entfernt] Dateien, [Menge entfernt] |
+| Datenbank | `ChatStorage.sqlite`, [Menge entfernt], Core Data, 18 Tabellen |
+| Nachrichten / Medien / Chats | [Anzahl entfernt] / [Anzahl entfernt] / 569 |
+
+**Pfadpräfix.** `ZWAMEDIAITEM.ZMEDIALOCALPATH` nennt Pfade wie `Media/…`, die
+Dateien liegen aber unter `Message/Media/…`. Ohne Präfix löst **kein** Wert auf,
+mit `Message/` lösen [Anzahl entfernt] auf. Das Präfix wird deshalb zur Laufzeit
+aus Kandidaten gemessen, nicht verdrahtet: WhatsApp könnte seine Ablage
+umstellen, und ein festes Präfix würde dann stillschweigend nichts mehr finden.
+
+**Vorschaubilder** stehen in `ZXMPPTHUMBPATH` ([Anzahl entfernt] auflösbar);
+`ZTHUMBNAILLOCALPATH` ist nie gefüllt.
+
+**Beziehungsrichtung.** Beide tragen: `ZWAMEDIAITEM.ZMESSAGE` und
+`ZWAMESSAGE.ZMEDIAITEM` je [Anzahl entfernt]. Gemessen wird trotzdem, weil es
+bei Threema anders ist.
+
+**Originaldateiname.** `ZTITLE` trägt bei Dokumenten den Namen, sonst
+Beschreibungen. Als Name gilt nur, was eine Endung hat — eine Beschreibung als
+Dateinamen zu nehmen wäre ein erfundener Name.
+
+**Datenschutz.** Die Medienpfade enthalten Telefonnummern und Gruppen-IDs als
+Verzeichnisnamen. Sie gehen weder in Logausgaben noch in das Export-Manifest;
+dort steht die `fileID`. Ein Test prüft das.
+
+**Ergebnis:** [Anzahl entfernt] Dateien, [Menge entfernt] extrahiert, 0 Fehler, 0
+Integritätsfehler, [Anzahl entfernt] einem Chat zugeordnet ([Anteil entfernt]).
+
+### 23.3 Signal ist nicht extrahierbar
+
+In fünf Signal-Domains liegen zusammen **zwölf Dateien mit 41 KB**:
+Einstellungs-Plists, WebKit-Caches, eine Lock-Datei, eine Textdatei. Keine
+Nachrichtendatenbank, keine Medien — Signal schließt sein Datenverzeichnis vom
+iOS-Backup aus.
+
+Das Profil existiert trotzdem, und zwar mit genau einer Aufgabe: den Grund
+nennen. Ein leeres Ergebnis ohne Erklärung sähe wie ein Fehler dieses Programms
+aus. Sollte Signal das Ausschließen aufgeben, greift das Profil dennoch — die
+erwarteten Tabellennamen stehen als **Kandidaten zur Prüfung** bereit, und die
+Erkennung läuft über den Bundle-Namensraum, nicht über Pfade.
+
+### 23.4 Ein Leistungsfehler, den erst WhatsApp zeigte
+
+`msgx analyze --no-media-inspection` versprach, keine Nutzdateien zu lesen,
+brauchte aber [Dauer entfernt] für WhatsApp. Ursache: die Datenbankerkennung las von
+**jeder** der [Anzahl entfernt] Dateien mehrere Kilobyte, um den Medientyp zu bestimmen.
+
+Gemessen: [Anzahl entfernt] Byte von [Anzahl entfernt] Dateien kosten ~[Dauer entfernt], die 16 Byte der
+SQLite-Signatur ~[Dauer entfernt]. Die Datenbankerkennung braucht nur die Signatur.
+Nach der Umstellung: **48 statt [Dauer entfernt].** Beide Lesewege laufen jetzt
+über eine Funktion (`_head(entry, length)`), damit es keine zwei Varianten gibt.
+
+Bei Threema mit [Anzahl entfernt] Dateien war der Fehler nicht spürbar. Erst der
+zwölffache Umfang machte ihn sichtbar.
+
+### 23.5 Gemeinsame Ansicht mehrerer Messenger
+
+`msgx ui --output <verzeichnis mit exporten>` erzeugt **eine** Seite über alle
+Exporte darunter, mit einem Umschalter (`Alle | Threema | WhatsApp`) und dem
+Messenger als weiterer Filterdimension. Pfade werden mit dem Verzeichnisnamen
+präfixiert.
+
+Chatnamen können sich zwischen Messengern wiederholen, deshalb trägt jeder Chat
+seinen Messenger mit — sonst würden zwei verschiedene Chats zu einem
+verschmelzen und die Zählung wäre falsch. Ein Test prüft, dass der Chat eines
+Mediums immer zum Messenger des Mediums passt.
+
+Am echten Export: [Anzahl entfernt] Medien (Threema [Anzahl entfernt] + WhatsApp [Anzahl entfernt]), 302 Chats,
+[Menge entfernt] Seite, in 1,[Dauer entfernt] erzeugt. Kontrollrechnung der Facetten:
+[Anzahl entfernt] + [Anzahl entfernt] = [Anzahl entfernt] Bilder, 179 + [Anzahl entfernt] = [Anzahl entfernt] Videos, 24 + 278 = 302
+Chats.

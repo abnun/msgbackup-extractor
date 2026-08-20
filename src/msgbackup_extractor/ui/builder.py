@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import resources
@@ -72,6 +73,8 @@ class IndexEntry:
     preview_only: bool
     #: True, wenn Inhalt und Dateiendung sich widersprechen.
     mismatch: bool
+    #: Index des Messengers in `messengers`. None bei einer Einzelseite.
+    messenger: int | None = None
     #: Zeitstempel der Backupdatei. Bewusst getrennt von `timestamp`: er sagt,
     #: wann das Backup die Datei schrieb, nicht wann der Inhalt entstand. Auf
     #: einer Zeitachse waere er irrefuehrend, als Angabe im Detail nuetzlich.
@@ -98,6 +101,8 @@ class IndexEntry:
             data["o"] = 1
         if self.mismatch:
             data["x"] = 1
+        if self.messenger is not None:
+            data["g"] = self.messenger
         return data
 
 
@@ -149,7 +154,13 @@ def _unix_seconds(value: str | None) -> int | None:
     return int(stamp.timestamp())
 
 
-def build_index(manifest: LoadedManifest, *, raw: dict[str, Any]) -> dict[str, Any]:
+def build_index(
+    manifest: LoadedManifest,
+    *,
+    raw: dict[str, Any],
+    path_prefix: str = "",
+    messenger: int | None = None,
+) -> dict[str, Any]:
     """Baut den Index fuer die Seite aus dem geladenen Manifest.
 
     Args:
@@ -157,6 +168,9 @@ def build_index(manifest: LoadedManifest, *, raw: dict[str, Any]) -> dict[str, A
         raw: Die rohe Manifest-Struktur - sie enthaelt Felder, die
             `LoadedManifest` bewusst nicht mitfuehrt (Chat, Zeitstempel,
             Originalname), weil `verify` sie nicht braucht.
+        path_prefix: Wird jedem Pfad vorangestellt. Fuer eine gemeinsame Seite
+            mehrerer Messenger, deren Exporte in Unterverzeichnissen liegen.
+        messenger: Index des Messengers, wenn mehrere auf einer Seite sind.
 
     Raises:
         UiBuildError: Wenn das Manifest aus einem Probelauf stammt oder keine
@@ -189,9 +203,11 @@ def build_index(manifest: LoadedManifest, *, raw: dict[str, Any]) -> dict[str, A
     for thumbnail in thumbnails:
         target = thumbnail.get("thumbnail_of")
         if target:
-            preview_by_original.setdefault(target, thumbnail["output_path"])
+            preview_by_original.setdefault(
+                target, path_prefix + thumbnail["output_path"]
+            )
 
-    used_previews = set(preview_by_original.values())
+    used_previews = {p.removeprefix(path_prefix) for p in preview_by_original.values()}
 
     # Chatnamen sammeln und nach Haeufigkeit ordnen, damit die Filterleiste die
     # grossen Chats zuerst zeigt.
@@ -211,10 +227,10 @@ def build_index(manifest: LoadedManifest, *, raw: dict[str, Any]) -> dict[str, A
         stamp, file_time = _split_time(entry)
         if preview is None and kind == "image":
             # Ohne eigenes Vorschaubild dient das Original als Kachel.
-            preview = entry["output_path"]
+            preview = path_prefix + entry["output_path"]
         entries.append(
             IndexEntry(
-                path=entry["output_path"],
+                path=path_prefix + entry["output_path"],
                 kind=kind,
                 mime=mime,
                 size=entry.get("size"),
@@ -225,6 +241,7 @@ def build_index(manifest: LoadedManifest, *, raw: dict[str, Any]) -> dict[str, A
                 preview=preview,
                 preview_only=False,
                 mismatch=bool(entry.get("extension_mismatch")),
+                messenger=messenger,
             )
         )
 
@@ -235,7 +252,7 @@ def build_index(manifest: LoadedManifest, *, raw: dict[str, Any]) -> dict[str, A
         stamp, file_time = _split_time(thumbnail)
         entries.append(
             IndexEntry(
-                path=thumbnail["output_path"],
+                path=path_prefix + thumbnail["output_path"],
                 kind=_kind(thumbnail.get("media_type"), thumbnail["output_path"]),
                 mime=thumbnail.get("media_type"),
                 size=thumbnail.get("size"),
@@ -243,9 +260,10 @@ def build_index(manifest: LoadedManifest, *, raw: dict[str, Any]) -> dict[str, A
                 timestamp=stamp,
                 file_time=file_time,
                 name=thumbnail.get("original_filename"),
-                preview=thumbnail["output_path"],
+                preview=path_prefix + thumbnail["output_path"],
                 preview_only=True,
                 mismatch=bool(thumbnail.get("extension_mismatch")),
+                messenger=messenger,
             )
         )
 
@@ -330,3 +348,130 @@ def load_raw_manifest(path: Path) -> dict[str, Any]:
         raise UiBuildError(f"Es gibt keine Datei {path.name}.") from error
     except json.JSONDecodeError as error:
         raise UiBuildError(f"{path.name} ist kein gueltiges JSON: {error}") from error
+
+
+# ---------------------------------------------------------------------------
+# Mehrere Messenger auf einer Seite
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ExportRef:
+    """Ein gefundener Export unterhalb eines gemeinsamen Verzeichnisses."""
+
+    #: Verzeichnisname, gleichzeitig das Pfadpraefix.
+    directory: str
+    manifest_path: Path
+    app: str | None
+
+    @property
+    def label(self) -> str:
+        """Anzeigename des Messengers.
+
+        Der Name kommt aus dem registrierten Profil, damit die Schreibweise
+        stimmt - aus dem Slug "whatsapp" wuerde sonst "Whatsapp".
+        """
+        from msgbackup_extractor.apps.registry import get_profile
+
+        slug = self.app or self.directory
+        try:
+            return get_profile(slug).name
+        except KeyError:
+            return slug[:1].upper() + slug[1:]
+
+
+def discover_exports(root: Path) -> list[ExportRef]:
+    """Findet Exporte unterhalb eines Verzeichnisses.
+
+    Ein Export ist ein Verzeichnis mit `export-manifest.json`. Gesucht wird nur
+    eine Ebene tief - tiefer zu suchen wuerde bei einem falsch gewaehlten
+    Wurzelverzeichnis lange dauern und Fremdes einsammeln.
+    """
+    found: list[ExportRef] = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        manifest = child / MANIFEST_NAME
+        if not manifest.is_file():
+            continue
+        app: str | None = None
+        with suppress(OSError, json.JSONDecodeError):
+            app = json.loads(manifest.read_text(encoding="utf-8")).get("app")
+        found.append(ExportRef(directory=child.name, manifest_path=manifest, app=app))
+    return found
+
+
+def build_combined_index(
+    exports: list[ExportRef], loader: Any, raw_loader: Any
+) -> dict[str, Any]:
+    """Fuehrt mehrere Exporte zu einem Index zusammen.
+
+    Chatnamen koennen sich zwischen Messengern wiederholen, deshalb traegt jeder
+    Chat seinen Messenger mit - sonst wuerden zwei verschiedene Chats zu einem
+    verschmelzen und die Zaehlung waere falsch.
+
+    Args:
+        loader: Funktion, die aus einem Pfad ein `LoadedManifest` macht.
+        raw_loader: Funktion, die aus einem Pfad die rohe Struktur macht.
+    """
+    if not exports:
+        raise UiBuildError(
+            "Unterhalb dieses Verzeichnisses wurde kein Export gefunden. "
+            f"Ein Export ist ein Verzeichnis mit einer {MANIFEST_NAME}."
+        )
+
+    messengers = [ref.label for ref in exports]
+    chats: list[dict[str, Any]] = []
+    items: list[dict[str, Any]] = []
+    counts: dict[str, int] = {}
+    per_messenger: list[dict[str, Any]] = []
+    generated: list[str] = []
+
+    for position, ref in enumerate(exports):
+        manifest = loader(ref.manifest_path)
+        index = build_index(
+            manifest,
+            raw=raw_loader(ref.manifest_path),
+            path_prefix=f"{ref.directory}/",
+            messenger=position,
+        )
+
+        # Lokale Chatindizes auf die gemeinsame Liste umschreiben.
+        offset = len(chats)
+        chats.extend({"n": name, "g": position} for name in index["chats"])
+        for item in index["items"]:
+            if "c" in item:
+                item["c"] += offset
+            items.append(item)
+
+        for key, value in index["counts"].items():
+            if isinstance(value, int):
+                counts[key] = counts.get(key, 0) + value
+        per_messenger.append(
+            {
+                "label": ref.label,
+                "app": index["app"],
+                "directory": ref.directory,
+                "entries": index["counts"]["entries"],
+                "generated_at": index["generated_at"],
+            }
+        )
+        if index["generated_at"]:
+            generated.append(index["generated_at"])
+
+    # Global neu sortieren: neueste zuerst, Undatiertes ans Ende.
+    items.sort(key=lambda i: (("t" not in i), -i.get("t", 0), i["p"]))
+
+    counts["messengers"] = len(messengers)
+    return {
+        "app": None,
+        "udid": None,
+        "generated_at": max(generated) if generated else None,
+        "tool_version": None,
+        "messengers": messengers,
+        "sources": per_messenger,
+        "chats": [c["n"] for c in chats],
+        "chat_messengers": [c["g"] for c in chats],
+        "counts": counts,
+        "items": items,
+    }
