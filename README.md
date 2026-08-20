@@ -33,14 +33,14 @@ Every guarantee below has a test that would fail if it stopped being true.
 | No password in logs or arguments | There is no password option. A test introspects every subcommand to keep it that way. |
 | Nothing is guessed | Structure is measured at runtime. When it cannot be established, you get a diagnostic report instead of a result. |
 
-Results from a real backup (iPhone, iOS, [Menge entfernt]):
+Verified end to end against a real iPhone backup holding both messengers: every
+exported file's SHA-256 matched, no write failures, no integrity errors. Over
+90 % of the media could be assigned to a chat; the rest went to `unassigned/`
+rather than being guessed.
 
-| | Threema | WhatsApp |
-|---|---|---|
-| Extracted | [Anzahl entfernt] files · [Menge entfernt] | [Anzahl entfernt] files · [Menge entfernt] |
-| Failures / integrity errors | 0 / 0 | 0 / 0 |
-| Assigned to a chat | [Anteil entfernt] | [Anteil entfernt] |
-| Runtime | [Dauer entfernt] | ~6 min |
+The measurements behind that live in the design document. Concrete figures — how
+many files, how large, how long — are deliberately absent here: they would
+describe the author's own device and message volume, not the tool.
 
 ---
 
@@ -148,8 +148,8 @@ chat assignment is impossible.
 
 Signal is detected, but there is nothing to get: the app excludes its data
 directory from iOS backups. In the backup measured here, five Signal domains
-held **twelve files totalling 41 KB** — preference plists, WebKit caches, a
-lock file. No message database, no media.
+held **a handful of files totalling a few dozen kilobytes** — preference plists,
+WebKit caches, a lock file. No message database, no media.
 
 The profile exists precisely to say so, rather than letting an empty result
 look like a bug in this tool. Signal data moves via Signal's own path (device
@@ -171,8 +171,8 @@ without a change, even though its storage model is fundamentally different.
 | Disk space | roughly the size of the messenger's data | same |
 
 The chat structure costs **no** extra space: it is hardlinked to the same data.
-In the runs above that saved [Menge entfernt] for Threema and [Menge entfernt] for WhatsApp. The
-backup itself is never copied.
+Without them the chat structure would double the space needed. The backup itself
+is never copied.
 
 ### Windows is untested
 
@@ -414,7 +414,7 @@ its own entry, marked "preview only": it is often all that remains of a deleted
 file.
 
 **Tiles pick the right resolution.** The previews the messengers store are
-tiny — median 100 × 73 px for WhatsApp. In a 200 CSS-px tile on a Retina
+tiny — around 100 × 73 px for WhatsApp. In a 200 CSS-px tile on a Retina
 display that is a fourfold upscale. So the manifest carries the real pixel
 dimensions, read from the file header, and the page offers both resolutions per
 tile via `srcset`. The browser picks the smallest sufficient source.
@@ -622,8 +622,9 @@ report.
 5. Core Data prefixes every blob with a marker byte (`0x01` inline, `0x02`
    reference). It is stripped; an unexpected value is reported rather than
    removed blindly.
-6. For [Anzahl entfernt] WhatsApp entries the backup holds **only** the preview image
-   (median 100 px wide). Those tiles cannot be sharp; the single view says so.
+6. For many WhatsApp entries the backup holds **only** the preview image
+   (typically around 100 px wide). Those tiles cannot be sharp; the single view
+   says so.
 7. Message texts are not exported. The UI therefore cannot show them.
 8. Secure erasure of the password from the Python heap is not guaranteeable.
 9. The cloud guard recognises the usual locations by path. An arbitrarily
@@ -641,15 +642,18 @@ diagnostic report.
 
 ## Intended use
 
-This tool is for **your own** backup on **your own** machine.
+> [!IMPORTANT]
+> This tool is for **your own** backup on **your own** machine.
 
 Backups contain messages exchanged with other people. Under the GDPR, purely
-private use falls under the household exemption (Art. 2(2)(c)); publishing or
-passing on extracted data does not.
+private use falls under the household exemption (Art. 2(2)(c)); **publishing or
+passing on extracted data does not — from that point you are the one
+responsible.**
 
-Running it against another person's backup without authorisation may be a
-criminal offence — in Germany, for example, under section 202a StGB. Do not do
-that.
+> [!CAUTION]
+> Running it against another person's backup without authorisation may be a
+> **criminal offence** — in Germany, for example, under section 202a StGB
+> (Ausspähen von Daten). Do not do that.
 
 Threema, WhatsApp and Signal are trademarks of their respective owners, named
 here only to describe which formats can be read. This project is not affiliated

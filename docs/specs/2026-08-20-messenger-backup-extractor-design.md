@@ -613,12 +613,13 @@ Ausgabeverzeichnis liest. Beides ist offline vollständig funktionsfähig.
 **Entschieden und umgesetzt.**
 
 * **Einzeldatei-HTML**, kein Server. `msgx ui` erzeugt `index.html` im
-  Exportverzeichnis. Der Index ([Menge entfernt] für [Anzahl entfernt] Einträge) wird eingebettet,
+  Exportverzeichnis. Der Index — bei einem großen Export einige Megabyte — wird
+  eingebettet,
   weil `fetch()` von `file://` an der Same-Origin-Regel scheitert.
 * **Navigation: Zeitachse zuerst**, neueste zuerst, Monatstrenner, Filter für
-  Typ, Jahr, Chat und Besonderheiten. Grund: ein einzelner Chat hält [Anteil entfernt] der
-  Dateien, eine chatzentrierte Startseite wäre ein Riesenordner und 23
-  Fußnoten.
+  Typ, Jahr, Chat und Besonderheiten. Grund: die Dateien verteilen sich extrem
+  ungleich über die Chats, eine chatzentrierte Startseite wäre ein Riesenordner
+  und viele Fußnoten.
 * **Randfälle sichtbar, aber gekennzeichnet.** Ohne Chat, ohne Datum, nur
   Vorschaubild, Endung ≠ Inhalt sind eigene Filter und an der Kachel markiert.
   Was fehlt, ist bei einer Datenrettung die wichtigste Information.
@@ -630,8 +631,9 @@ Ausgabeverzeichnis liest. Beides ist offline vollständig funktionsfähig.
 **Vorschaubilder.** Ein Vorschaubild ist die Kachel seines Originals, kein
 eigener Eintrag — sonst stünde jedes Bild doppelt. Ein Vorschaubild ohne
 Original bleibt ein eigener Eintrag mit Kennzeichnung; es ist oft alles, was
-von einem gelöschten Medium übrig ist. Von [Anzahl entfernt] exportierten Dateien bleiben
-so [Anzahl entfernt] Einträge: [Anzahl entfernt] Originale und 948 verwaiste Vorschaubilder.
+von einem gelöschten Medium übrig ist. Original und Vorschaubild fallen so zu
+einem Eintrag zusammen; die verwaisten Vorschaubilder kommen als eigene
+Einträge hinzu.
 
 **Zeitachse und Dateidatum.** Auf der Zeitachse steht ausschließlich das
 Nachrichtendatum aus der App-Datenbank. Ein Datei-Änderungsdatum aus dem
@@ -645,16 +647,16 @@ Dateidatum getrennt aus.
 
 ## 19. Nachtrag: Erkenntnisse aus dem echten Backup (2026-08-20)
 
-Die Analyse eines echten Backups (iPhone, iOS, unverschlüsselt, [Menge entfernt],
-Threema `ch.threema.iapp` Version [Version entfernt]) hat die folgenden Punkte belegt. Sie
+Die Analyse eines echten, unverschlüsselten Backups mit Threema
+(`ch.threema.iapp`) hat die folgenden Punkte belegt. Sie
 sind die Grundlage für Phase 4 und 5 und ersetzen dort jede Annahme.
 
 ### 19.1 Ablage der Threema-Daten
 
 ```
 AppDomainGroup-group.ch.threema/
-├── ThreemaData.sqlite                      [Menge entfernt], 26 Tabellen, Core Data
-└── .ThreemaData_SUPPORT/_EXTERNAL_DATA/    [Anzahl entfernt] Dateien, [Menge entfernt], UUID-Namen
+├── ThreemaData.sqlite                      26 Tabellen, Core Data
+└── .ThreemaData_SUPPORT/_EXTERNAL_DATA/    Blob-Dateien mit UUID-Namen
 ```
 
 `ThreemaData.sqlite` ist ein lesbarer Core-Data-Store, **nicht** app-eigen
@@ -670,7 +672,7 @@ Eine `ZDATA`-Spalte enthält entweder die Daten selbst oder eine Referenz auf
 0x02 | 36 Byte UUID als ASCII (Großbuchstaben) | 0x00
 ```
 
-Verifiziert: [Anzahl entfernt] Referenzen lösen auf eine vorhandene Datei auf.
+Verifiziert: **jede** Referenz löst auf eine vorhandene Datei auf.
 Unterscheidungskriterium ist damit `len(blob) == 38 and blob[0] == 0x02`.
 
 ### 19.3 Richtung der Beziehungen
@@ -699,11 +701,11 @@ jeder Beziehung zur Laufzeit prüfen und die tragende verwenden.
 Ein Extractor, der nur Dateien aus `_EXTERNAL_DATA` kopiert, verliert
 Originalmedien **stillschweigend**:
 
-| Quelle | Anzahl | Größe |
-|---|---|---|
-| Externe Blob-Dateien | [Anzahl entfernt] | [Menge entfernt] |
-| Inline-Originale (nur in der DB) | 714 | [Menge entfernt] |
-| Inline-Thumbnails (nur in der DB) | [Anzahl entfernt] | [Menge entfernt] |
+| Quelle | Befund |
+|---|---|
+| Externe Blob-Dateien | die Mehrzahl der Originale, als Datei im Backup |
+| Inline-Originale (nur in der DB) | einige Hundert — ohne Auslesen der Datenbank unauffindbar |
+| Inline-Thumbnails (nur in der DB) | mehrere Tausend, ebenso |
 
 Beide Quellen laufen durch dieselbe SHA-256-Integritätsprüfung; bei
 Inline-Blobs ist der Datenbankwert die Quelle statt einer Datei.
@@ -712,9 +714,9 @@ Inline-Blobs ist der Datenbankwert die Quelle statt einer Datei.
 
 `ZMESSAGE` liefert `ZFILENAME` (Originaldateiname), `ZMIMETYPE`, `ZDATE`.
 `ZCONVERSATION` liefert `ZGROUPNAME` für Gruppen und `ZCONTACT` für
-Einzelchats. Gemessene Abdeckung: [Anzahl entfernt] externen Dateien sind einem
-Chat belegbar zuordenbar, 277 nicht (→ `unassigned/`). 36 Konversationen,
-davon 12 Gruppen; 84 Kontakte.
+Einzelchats. Gemessene Abdeckung: die große Mehrheit der externen Dateien ist
+einem Chat belegbar zuordenbar, der Rest geht nach `unassigned/`. Gruppen- und
+Einzelchats kommen beide vor.
 
 ### 19.6 Nicht zu exportierende Dateien
 
@@ -727,9 +729,9 @@ nach `metadata/` bzw. `databases/`, nicht in die Medienverzeichnisse.
 
 ## 20. Nachtrag: Core-Data-Markierungsbyte (2026-08-20)
 
-Beim Probelauf am echten Backup fiel auf, dass 434 Dateien in der Kategorie
-`other` landeten und 399 als Video galten, obwohl das Backup nur 176
-Videodateien enthält. Ursache war ein Byte:
+Beim Probelauf am echten Backup fiel auf, dass Dateien in der Kategorie
+`other` landeten und mehr als doppelt so viele Dateien als Video galten, wie
+das Backup überhaupt an Videos enthielt. Ursache war ein Byte:
 
 Core Data stellt **jedem** Blob in einer Spalte mit „Allows External Storage"
 ein Markierungsbyte voran:
@@ -739,8 +741,8 @@ ein Markierungsbyte voran:
 | `0x01` | Die Daten folgen unmittelbar (inline). |
 | `0x02` | Es folgt eine 36-Byte-UUID und `0x00` — Referenz auf `_EXTERNAL_DATA`. |
 
-Am echten Backup ausgezählt: alle [Anzahl entfernt] Inline-Blobs beginnen mit `0x01`, alle
-[Anzahl entfernt] Referenzen mit `0x02`. Ohne Abschneiden des `0x01`:
+Am echten Backup ausgezählt: **jeder** Inline-Blob beginnt mit `0x01`, **jede**
+Referenz mit `0x02`. Ohne Abschneiden des `0x01`:
 
 * Jede aus der Datenbank exportierte Datei wäre um ein Byte verschoben, also
   unbrauchbar — [Anzahl entfernt] davon JPEGs.
@@ -765,17 +767,14 @@ Wirklichkeit, beweist nichts. Der Generator setzt es jetzt.
 
 | | |
 |---|---|
-| Extrahiert | [Anzahl entfernt] Dateien, [Menge entfernt] |
 | Fehlgeschlagen | 0 |
 | Integritätsfehler | 0 |
-| Laufzeit | [Dauer entfernt] |
-| Chat-Zuordnung | [Anzahl entfernt] ([Anteil entfernt]), 699 nach `unassigned/` |
-| Chats | 25 |
-| Per Hardlink gespart | [Menge entfernt] |
-| `verify` | [Anzahl entfernt] in Ordnung |
+| Chat-Zuordnung | über 90 %, der Rest nach `unassigned/` |
+| Per Hardlink gespart | die vollständige Größe der Mediensammlung |
+| `verify` | jede exportierte Datei in Ordnung |
 
-Stichprobe von 400 exportierten Bildern: alle mit gültiger Signatur, JPEGs mit
-korrekter Endmarke `FFD9`, keine Datei mit verbliebenem `0x01`-Vorspann.
+Stichprobe exportierter Bilder: alle mit gültiger Signatur, JPEGs mit korrekter
+Endmarke `FFD9`, keine Datei mit verbliebenem `0x01`-Vorspann.
 
 Das Backup blieb unverändert; es entstanden keine SQLite-Nebenprodukte.
 
@@ -838,8 +837,8 @@ verspricht und nichts liefert, wäre schlechter als kein Knopf.
 ### 22.3 `msgx collect`
 
 Sammelt die Pfade einer Auswahlliste in ein Zielverzeichnis. Standardmäßig per
-Hardlink — eine Sammlung von 937 MB belegte im Versuch **null** zusätzliche
-Bytes. `--no-hardlinks` erzeugt echte Kopien, `--keep-structure` behält die
+Hardlink — eine Sammlung von mehreren Hundert Megabyte belegte im Versuch
+**null** zusätzliche Bytes. `--no-hardlinks` erzeugt echte Kopien, `--keep-structure` behält die
 Verzeichnisstruktur, `--verify` prüft jede Datei gegen den SHA-256 im
 Export-Manifest.
 
@@ -872,13 +871,13 @@ Implementierungen wären mit Sicherheit auseinandergelaufen.
 Optionen ohne Treffer werden abgeblendet und deaktiviert — gewählte bleiben
 bedienbar, sonst könnte man sie nicht abwählen.
 
-Gemessen an [Anzahl entfernt] Einträgen und 45 Optionen sind das rund [Anzahl entfernt] Prüfungen je
-Filteränderung; unter einer Millisekunde je Option, also nicht spürbar.
+Bei einem großen Export und 45 Optionen sind das einige Hunderttausend
+Prüfungen je Filteränderung; unter einer Millisekunde je Option, also nicht
+spürbar.
 
 Kontrollrechnung aus dem echten Export: bei „Videos" gewählt summieren die
-Jahreszahlen 20 + 20 + 38 + 42 + 55 + 3 + 1 = 179 — genau die Gesamtzahl der
-Videos. Und „Ohne Datum" fällt auf 0, weil ein gewähltes Jahr undatierte
-Einträge zwangsläufig ausschließt.
+Jahreszahlen genau zur Gesamtzahl der Videos. Und „Ohne Datum" fällt auf 0,
+weil ein gewähltes Jahr undatierte Einträge zwangsläufig ausschließt.
 
 ### 22.5 Am echten Export erprobt
 
@@ -887,10 +886,9 @@ Filter auf „Videos", „Alle im Filter auswählen", Übergabedialog, dann
 
 | | |
 |---|---|
-| Ausgewählt | 179 Dateien, [Menge entfernt] |
-| Eingesammelt | 179 |
+| Eingesammelt | die vollständige Auswahl |
 | Hashes geprüft | alle in Ordnung |
-| Per Hardlink verbunden | [Anzahl entfernt] |
+| Per Hardlink verbunden | jede Datei |
 | Zusätzlich belegter Speicher | 0 |
 | Laufzeit | unter einer Sekunde |
 
@@ -918,11 +916,10 @@ nicht zwei Implementierungen gibt.
 
 | | |
 |---|---|
-| Bundle Identifier | `net.whatsapp.WhatsApp`, Version [Version entfernt] |
+| Bundle Identifier | `net.whatsapp.WhatsApp` |
 | Domain mit den Daten | `AppDomainGroup-group.net.whatsapp.WhatsApp.shared` |
-| Umfang | [Anzahl entfernt] Dateien, [Menge entfernt] |
-| Datenbank | `ChatStorage.sqlite`, [Menge entfernt], Core Data, 18 Tabellen |
-| Nachrichten / Medien / Chats | [Anzahl entfernt] / [Anzahl entfernt] / 569 |
+| Datenbank | `ChatStorage.sqlite`, Core Data, 18 Tabellen |
+| Umfang | um eine Größenordnung mehr Dateien als bei Threema |
 
 **Pfadpräfix.** `ZWAMEDIAITEM.ZMEDIALOCALPATH` nennt Pfade wie `Media/…`, die
 Dateien liegen aber unter `Message/Media/…`. Ohne Präfix löst **kein** Wert auf,
@@ -934,7 +931,7 @@ umstellen, und ein festes Präfix würde dann stillschweigend nichts mehr finden
 `ZTHUMBNAILLOCALPATH` ist nie gefüllt.
 
 **Beziehungsrichtung.** Beide tragen: `ZWAMEDIAITEM.ZMESSAGE` und
-`ZWAMESSAGE.ZMEDIAITEM` je [Anzahl entfernt]. Gemessen wird trotzdem, weil es
+`ZWAMESSAGE.ZMEDIAITEM` in jedem einzelnen Fall. Gemessen wird trotzdem, weil es
 bei Threema anders ist.
 
 **Originaldateiname.** `ZTITLE` trägt bei Dokumenten den Namen, sonst
@@ -945,13 +942,14 @@ Dateinamen zu nehmen wäre ein erfundener Name.
 Verzeichnisnamen. Sie gehen weder in Logausgaben noch in das Export-Manifest;
 dort steht die `fileID`. Ein Test prüft das.
 
-**Ergebnis:** [Anzahl entfernt] Dateien, [Menge entfernt] extrahiert, 0 Fehler, 0
-Integritätsfehler, [Anzahl entfernt] einem Chat zugeordnet ([Anteil entfernt]).
+**Ergebnis:** vollständig extrahiert, 0 Fehler, 0 Integritätsfehler, über 90 %
+einem Chat zugeordnet.
 
 ### 23.3 Signal ist nicht extrahierbar
 
-In fünf Signal-Domains liegen zusammen **zwölf Dateien mit 41 KB**:
-Einstellungs-Plists, WebKit-Caches, eine Lock-Datei, eine Textdatei. Keine
+In fünf Signal-Domains liegen zusammen **eine Handvoll Dateien mit wenigen
+Dutzend Kilobyte**: Einstellungs-Plists, WebKit-Caches, eine Lock-Datei, eine
+Textdatei. Keine
 Nachrichtendatenbank, keine Medien — Signal schließt sein Datenverzeichnis vom
 iOS-Backup aus.
 
@@ -964,16 +962,17 @@ Erkennung läuft über den Bundle-Namensraum, nicht über Pfade.
 ### 23.4 Ein Leistungsfehler, den erst WhatsApp zeigte
 
 `msgx analyze --no-media-inspection` versprach, keine Nutzdateien zu lesen,
-brauchte aber [Dauer entfernt] für WhatsApp. Ursache: die Datenbankerkennung las von
-**jeder** der [Anzahl entfernt] Dateien mehrere Kilobyte, um den Medientyp zu bestimmen.
+brauchte aber über zwei Minuten für WhatsApp. Ursache: die Datenbankerkennung
+las von **jeder** Datei im Backup mehrere Kilobyte, um den Medientyp zu
+bestimmen.
 
-Gemessen: [Anzahl entfernt] Byte von [Anzahl entfernt] Dateien kosten ~[Dauer entfernt], die 16 Byte der
-SQLite-Signatur ~[Dauer entfernt]. Die Datenbankerkennung braucht nur die Signatur.
-Nach der Umstellung: **48 statt [Dauer entfernt].** Beide Lesewege laufen jetzt
+Gemessen: [Anzahl entfernt] Byte je Datei kosten rund dreizehnmal so lange wie die 16 Byte
+der SQLite-Signatur. Die Datenbankerkennung braucht nur die Signatur. Nach der
+Umstellung dauerte der Lauf weniger als ein Drittel. Beide Lesewege laufen jetzt
 über eine Funktion (`_head(entry, length)`), damit es keine zwei Varianten gibt.
 
-Bei Threema mit [Anzahl entfernt] Dateien war der Fehler nicht spürbar. Erst der
-zwölffache Umfang machte ihn sichtbar.
+Bei Threema mit einem Bruchteil der Dateien war der Fehler nicht spürbar. Erst
+der um mehr als das Zehnfache größere Umfang machte ihn sichtbar.
 
 ### 23.5 Gemeinsame Ansicht mehrerer Messenger
 
@@ -987,10 +986,9 @@ seinen Messenger mit — sonst würden zwei verschiedene Chats zu einem
 verschmelzen und die Zählung wäre falsch. Ein Test prüft, dass der Chat eines
 Mediums immer zum Messenger des Mediums passt.
 
-Am echten Export: [Anzahl entfernt] Medien (Threema [Anzahl entfernt] + WhatsApp [Anzahl entfernt]), 302 Chats,
-[Menge entfernt] Seite, in 1,[Dauer entfernt] erzeugt. Kontrollrechnung der Facetten:
-[Anzahl entfernt] + [Anzahl entfernt] = [Anzahl entfernt] Bilder, 179 + [Anzahl entfernt] = [Anzahl entfernt] Videos, 24 + 278 = 302
-Chats.
+Am echten Export erprobt: eine Seite über beide Messenger, in wenigen Sekunden
+erzeugt. Kontrollrechnung der Facetten: die Summe je Messenger ergibt in jeder
+Kategorie genau die Zahl der gemeinsamen Ansicht — Bilder, Videos und Chats.
 
 
 ---
@@ -1097,7 +1095,7 @@ gewählt. Damit gemessen, an 60 WhatsApp-Kacheln:
 
 ### 25.2 Was eine echte Grenze bleibt
 
-Für [Anzahl entfernt] WhatsApp-Einträge liegt im Backup **nur** das Vorschaubild; das
+Für mehrere Tausend WhatsApp-Einträge liegt im Backup **nur** das Vorschaubild; das
 Original ist nicht enthalten. Diese Kacheln können nicht scharf werden. Sie
 sind als „nur Vorschau" gekennzeichnet, die Einzelansicht nennt die Auflösung
 und erklärt, dass es nichts Schärferes gibt. Eine Unschärfe, deren Grund

@@ -200,8 +200,8 @@ EXTERNAL_REF_SUFFIX: Final = 0x00
 
 #: Core Data stellt jedem Blob ein Markierungsbyte voran: `0x01` heisst
 #: "die Daten folgen direkt", `0x02` heisst "es folgt eine Referenz auf
-#: _EXTERNAL_DATA". Am echten Backup nachgezaehlt: alle [Anzahl entfernt] Inline-Blobs
-#: beginnen mit 0x01, alle [Anzahl entfernt] Referenzen mit 0x02.
+#: _EXTERNAL_DATA". Am echten Backup nachgezaehlt: jeder Inline-Blob beginnt
+#: mit 0x01, jede Referenz mit 0x02.
 #:
 #: Dieses Byte MUSS abgeschnitten werden. Ohne das waere jede aus der
 #: Datenbank exportierte Datei um ein Byte verschoben - ein JPEG liesse sich

@@ -1,8 +1,10 @@
 # Messenger Backup Extractor — Produktwahrheit
 
-> Alle Zahlen in diesem Dokument sind an einem echten Backup gemessen
-> (iPhone, iOS, [Menge entfernt], unverschlüsselt) und in
-> `docs/specs/2026-08-20-messenger-backup-extractor-design.md` belegt.
+> Alle Aussagen in diesem Dokument sind an einem echten Backup gemessen und in
+> `docs/specs/2026-08-20-messenger-backup-extractor-design.md` belegt. Konkrete
+> Stückzahlen, Datenmengen und Gerätedaten stehen absichtlich nirgends: sie
+> beschreiben das Gerät und das Nachrichtenvolumen des Autors, nicht das
+> Produkt.
 
 ## Was es ist
 
@@ -34,27 +36,28 @@ Archiv zurückholt. Sitzt am Mac, hat ein Finder-Backup, kann ein Terminal
 
 | | Threema | WhatsApp |
 |---|---|---|
-| Extrahiert | [Anzahl entfernt] Dateien, [Menge entfernt] | [Anzahl entfernt] Dateien, [Menge entfernt] |
+| Extrahiert | vollständig | vollständig |
 | Fehler / Integritätsfehler | 0 / 0 | 0 / 0 |
-| Einem Chat zugeordnet | [Anteil entfernt] | [Anteil entfernt] |
-| Laufzeit | [Dauer entfernt] | ~6 Minuten |
+| Einem Chat zugeordnet | über 90 % | über 90 % |
+| Laufzeit | unter zwei Minuten | wenige Minuten |
 
-Signal: erkannt (v1799.0), aber **nicht extrahierbar** — die App schließt ihr
-Datenverzeichnis vom iOS-Backup aus. Im Backup lagen zwölf Dateien mit 41 KB.
-Das Profil existiert, um diesen Grund zu nennen.
+Signal: erkannt, aber **nicht extrahierbar** — die App schließt ihr
+Datenverzeichnis vom iOS-Backup aus. Im Backup lag nur eine Handvoll Dateien mit
+wenigen Dutzend Kilobyte. Das Profil existiert, um diesen Grund zu nennen.
 
 ## Was nur dieses Produkt beweisen kann
 
 Fehler, die nur ein echtes Backup zeigt, und die es gefunden hat:
 
 * **Ein Byte.** Core Data stellt jedem Blob eine Markierung voran (`0x01`
-  inline, `0x02` Referenz). Ohne Abschneiden wären [Anzahl entfernt] aus der Datenbank
-  exportierte Dateien um ein Byte verschoben — [Anzahl entfernt] davon JPEGs, unbrauchbar —
-  und die Signaturerkennung hätte den Typ per Dateiname geraten: 399 statt 179
-  Videos.
+  inline, `0x02` Referenz). Ohne Abschneiden wäre **jede** aus der Datenbank
+  exportierte Datei um ein Byte verschoben — die große Mehrheit davon JPEGs,
+  unbrauchbar — und die Signaturerkennung hätte den Typ per Dateiname geraten:
+  mehr als doppelt so viele angebliche Videos wie tatsächlich vorhanden.
 * **Zwei Epochen.** MBFile zählt ab 1970, Core Data ab 2001. Verwechselt man
-  sie, landen Datumsangaben 31 Jahre in der Zukunft. Von [Anzahl entfernt] Zeitstempeln
-  ergaben [Anzahl entfernt] mit der Unix-Epoche ein plausibles Datum und 0 mit der anderen.
+  sie, landen Datumsangaben 31 Jahre in der Zukunft. Bei jedem geprüften
+  Zeitstempel ergab die Unix-Epoche ein plausibles Datum und die andere in
+  keinem einzigen Fall.
 * **Eine verwaiste Richtung.** Core Data legt den Fremdschlüssel je Beziehung
   nur auf einer Seite ab. Bei Threema ist `ZIMAGEDATA.ZMESSAGE` zu 100 %
   verwaist — wer dort joint, hält die Chat-Zuordnung für unmöglich. Die Richtung
@@ -78,8 +81,14 @@ implementiert; eigener Code ist Formatparsing.
 
 Gedacht für das **eigene** Backup auf dem **eigenen** Rechner. Die Daten
 enthalten Nachrichten Dritter; für rein privaten Gebrauch greift die
-Haushaltsausnahme (Art. 2 Abs. 2 lit. c DSGVO), beim Weitergeben nicht mehr. Auf
-das Backup einer anderen Person angewendet kann es § 202a StGB berühren.
+Haushaltsausnahme (Art. 2 Abs. 2 lit. c DSGVO), beim Weitergeben nicht mehr —
+dann ist der Anwender verantwortlich. Auf das Backup einer anderen Person
+angewendet kann es § 202a StGB berühren.
+
+Daraus folgt auch etwas für die Oberflächen dieses Projekts: **sie dürfen keine
+Zahlen über den Bestand ihres Autors nennen.** Gerätemodell, Backup-Größe,
+Dateizahlen und Chat-Zahlen sind zusammen ein Profil einer identifizierbaren
+Person. Nachweise gehören dazu, Selbstauskünfte nicht.
 
 Threema, WhatsApp und Signal sind Marken ihrer jeweiligen Inhaber. Es besteht
 keine Verbindung zu ihnen.

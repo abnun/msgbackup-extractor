@@ -1,19 +1,19 @@
 """Profil fuer WhatsApp (iOS).
 
 WhatsApp speichert seine Medien grundlegend anders als Threema. Am echten
-Backup vermessen (iPhone, iOS, WhatsApp [Version entfernt]):
+Backup vermessen:
 
 * Die Nachrichtendatenbank ist `ChatStorage.sqlite` in
   `AppDomainGroup-group.net.whatsapp.WhatsApp.shared`, ein Core-Data-Store mit
-  [Anzahl entfernt] Nachrichten, [Anzahl entfernt] Medieneintraegen und 569 Chats.
+  Nachrichten, Medieneintraegen und Chats in eigenen Entitaeten.
 * Medien liegen als **echte Dateien** unter `Message/Media/…`, nicht als Blobs
   in der Datenbank. Die Datenbank nennt in `ZWAMEDIAITEM.ZMEDIALOCALPATH` einen
-  Pfad, dem das Praefix `Message/` fehlt: mit Praefix loesen [Anzahl entfernt]
+  Pfad, dem das Praefix `Message/` fehlt: mit Praefix loesen nahezu alle
   Werten auf eine Backupdatei auf, ohne Praefix keiner.
 * Vorschaubilder stehen in `ZXMPPTHUMBPATH`, ebenfalls als Datei
-  ([Anzahl entfernt] aufloesbar). `ZTHUMBNAILLOCALPATH` ist nie gefuellt.
+  (ebenfalls nahezu alle aufloesbar). `ZTHUMBNAILLOCALPATH` ist nie gefuellt.
 * Beide Beziehungsrichtungen tragen: `ZWAMEDIAITEM.ZMESSAGE` und
-  `ZWAMESSAGE.ZMEDIAITEM` je [Anzahl entfernt]. Anders als bei Threema, wo eine
+  `ZWAMESSAGE.ZMEDIAITEM` in jedem einzelnen Fall. Anders als bei Threema, wo eine
   Seite vollstaendig verwaist ist - weshalb die Richtung trotzdem gemessen und
   nicht angenommen wird.
 * Chatnamen stehen in `ZWACHATSESSION.ZPARTNERNAME` (alle 569 gefuellt);

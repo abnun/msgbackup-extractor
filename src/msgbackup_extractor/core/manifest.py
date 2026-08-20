@@ -42,7 +42,7 @@ OPTIONAL_COLUMNS: Final = ("flags", "file")
 
 #: Bezugszeitpunkt der MBFile-Zeitstempel.
 #:
-#: Am echten Backup verifiziert: [Anzahl entfernt] Werten ergeben mit der
+#: Am echten Backup verifiziert: jeder gepruefte Wert ergibt mit der
 #: Unix-Epoche ein plausibles Datum, mit der Apple-Epoche (2001) kein einziges -
 #: dort landen sie 31 Jahre in der Zukunft. MBFile und Core Data verwenden
 #: also unterschiedliche Bezugszeitpunkte; Core-Data-Zeitstempel (ZDATE) zaehlen

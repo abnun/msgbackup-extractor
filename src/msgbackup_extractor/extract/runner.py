@@ -4,7 +4,7 @@ Grundsaetze:
 
 * **Jede Datei ist eine eigene Transaktion.** Ein Fehler bei einer Datei
   erzeugt einen Eintrag im Bericht und eine Warnung, dann geht es weiter. Ein
-  beschaedigtes Video darf nicht [Anzahl entfernt] andere Dateien kosten.
+  beschaedigtes Video darf nicht tausende andere Dateien kosten.
 * **Integritaet wird geprueft, nicht behauptet.** Der SHA-256 des Quellinhalts
   entsteht beim Schreiben im Vorbeigehen, der des Ziels wird danach aus der
   geschriebenen Datei gelesen. Erst der Vergleich beider Werte gilt als Nachweis.

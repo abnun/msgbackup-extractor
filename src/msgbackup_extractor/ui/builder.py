@@ -11,8 +11,8 @@ Aufbau des Index:
 * Vorschaubilder **ohne** Original bleiben eigene Eintraege und werden als
   solche gekennzeichnet. Sie sind haeufig das Einzige, was von einem
   geloeschten Medium uebrig ist - sie wegzulassen waere ein stiller Verlust.
-* Feldnamen sind kurz gehalten, weil der Index eingebettet wird: bei [Anzahl entfernt]
-  Eintraegen macht das rund ein Drittel der Dateigroesse aus.
+* Feldnamen sind kurz gehalten, weil der Index eingebettet wird: bei einem
+  grossen Export macht das rund ein Drittel der Dateigroesse aus.
 """
 
 from __future__ import annotations

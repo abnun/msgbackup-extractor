@@ -34,14 +34,14 @@ stimmt.
 | Kein Passwort in Log oder Argumenten | Es gibt keine Passwort-Option. Ein Test prüft jeden Unterbefehl, damit das so bleibt. |
 | Es wird nichts geraten | Strukturen werden zur Laufzeit gemessen. Was sich nicht feststellen lässt, führt zu einem Diagnosebericht statt zu einem Ergebnis. |
 
-Ergebnis am echten Backup (iPhone, iOS, [Menge entfernt]):
+Von Anfang bis Ende an einem echten iPhone-Backup mit beiden Messengern geprüft:
+jede exportierte Datei mit übereinstimmendem SHA-256, kein Schreibfehler, kein
+Integritätsfehler. Über 90 % der Medien ließen sich einem Chat zuordnen, der
+Rest ging nach `unassigned/` statt geraten zu werden.
 
-| | Threema | WhatsApp |
-|---|---|---|
-| Extrahiert | [Anzahl entfernt] Dateien · [Menge entfernt] | [Anzahl entfernt] Dateien · [Menge entfernt] |
-| Fehler / Integritätsfehler | 0 / 0 | 0 / 0 |
-| Einem Chat zugeordnet | [Anteil entfernt] | [Anteil entfernt] |
-| Laufzeit | [Dauer entfernt] | ~6 min |
+Die Messungen dazu stehen im Designdokument. Konkrete Zahlen — wie viele
+Dateien, wie groß, wie lange — fehlen hier absichtlich: sie beschreiben das
+Gerät und das Nachrichtenvolumen des Autors, nicht das Werkzeug.
 
 ---
 
@@ -150,8 +150,9 @@ eine Chatzuordnung sei unmöglich.
 
 Signal wird erkannt, aber es gibt nichts zu holen: die App schließt ihr
 Datenverzeichnis vom iOS-Backup aus. Im hier gemessenen Backup enthielten fünf
-Signal-Domains **zwölf Dateien mit zusammen 41 KB** — Einstellungs-Plists,
-WebKit-Caches, eine Lock-Datei. Keine Nachrichtendatenbank, keine Medien.
+Signal-Domains **eine Handvoll Dateien mit zusammen wenigen Dutzend Kilobyte** —
+Einstellungs-Plists, WebKit-Caches, eine Lock-Datei. Keine
+Nachrichtendatenbank, keine Medien.
 
 Das Profil existiert genau dafür, das zu sagen, statt ein leeres Ergebnis wie
 einen Fehler dieses Werkzeugs aussehen zu lassen. Signal-Daten gehen über
@@ -174,8 +175,8 @@ ist.
 | Speicherplatz | etwa die Datenmenge des Messengers | dasselbe |
 
 Die Chat-Struktur kostet **keinen** zusätzlichen Platz: sie ist per Hardlink auf
-dieselben Daten gelegt. In den Durchläufen oben sparte das [Menge entfernt] bei Threema
-und [Menge entfernt] bei WhatsApp. Das Backup selbst wird nie kopiert.
+dieselben Daten gelegt. Ohne sie würde die Chat-Struktur den Platzbedarf
+verdoppeln. Das Backup selbst wird nie kopiert.
 
 ### Windows ist ungeprüft
 
@@ -425,7 +426,7 @@ bleibt ein eigener Eintrag, markiert als „nur Vorschau": oft ist sie alles, wa
 von einer gelöschten Datei übrig ist.
 
 **Kacheln wählen die passende Auflösung.** Die Vorschauen der Messenger sind
-winzig — bei WhatsApp im Mittel 100 × 73 px. In einer 200 CSS-px breiten Kachel
+winzig — bei WhatsApp etwa 100 × 73 px. In einer 200 CSS-px breiten Kachel
 auf einem Retina-Display ist das vierfach hochskaliert. Deshalb trägt das
 Manifest die echten Pixelmaße, gelesen aus dem Dateikopf, und die Seite bietet
 je Kachel beide Auflösungen über `srcset` an. Der Browser wählt die kleinste
@@ -643,9 +644,9 @@ Windows heißt er `powershell -Command Get-Clipboard`.
 5. Core Data stellt jedem Blob ein Markierungsbyte voran (`0x01` inline, `0x02`
    Verweis). Es wird entfernt; ein unerwarteter Wert wird gemeldet und nicht
    blind abgeschnitten.
-6. Für [Anzahl entfernt] WhatsApp-Einträge liegt im Backup **nur** das Vorschaubild (im
-   Mittel 100 px breit). Diese Kacheln können nicht scharf sein; die
-   Einzelansicht sagt das.
+6. Für viele WhatsApp-Einträge liegt im Backup **nur** das Vorschaubild (meist
+   um 100 px breit). Diese Kacheln können nicht scharf sein; die Einzelansicht
+   sagt das.
 7. Nachrichtentexte werden nicht exportiert. Das UI kann sie daher nicht zeigen.
 8. Das sichere Löschen des Passworts aus dem Python-Heap ist nicht garantierbar.
 9. Der Cloud-Wächter erkennt die üblichen Orte über den Pfad. Ein beliebig
@@ -664,14 +665,18 @@ Werkzeug nur einen Diagnosebericht erzeugen.
 
 ## Bestimmungsgemäße Verwendung
 
-Dieses Werkzeug ist für das **eigene** Backup auf dem **eigenen** Rechner.
+> [!IMPORTANT]
+> Dieses Werkzeug ist für das **eigene** Backup auf dem **eigenen** Rechner.
 
 Backups enthalten Nachrichten, die mit anderen Menschen gewechselt wurden. Die
 rein private Nutzung fällt unter die Haushaltsausnahme der DSGVO (Art. 2 Abs. 2
-lit. c); das Veröffentlichen oder Weitergeben extrahierter Daten nicht.
+lit. c); **das Veröffentlichen oder Weitergeben extrahierter Daten nicht — ab
+dann sind Sie dafür verantwortlich.**
 
-Es auf das Backup einer anderen Person anzuwenden, kann ohne Befugnis eine
-Straftat sein — in Deutschland etwa nach § 202a StGB. Tun Sie das nicht.
+> [!CAUTION]
+> Es auf das Backup einer anderen Person anzuwenden, kann ohne Befugnis eine
+> **Straftat** sein — in Deutschland etwa nach § 202a StGB (Ausspähen von
+> Daten). Tun Sie das nicht.
 
 Threema, WhatsApp und Signal sind Marken der jeweiligen Inhaber und werden hier
 nur genannt, um zu beschreiben, welche Formate gelesen werden können. Dieses

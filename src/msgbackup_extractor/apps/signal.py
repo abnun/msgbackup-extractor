@@ -4,9 +4,9 @@ Dieses Profil kann in einem iOS-Backup mit hoher Wahrscheinlichkeit **nichts**
 extrahieren, und genau das ist seine Aufgabe: es soll den Grund nennen, statt
 dass ein leeres Ergebnis wie ein Fehler des Programms aussieht.
 
-Am echten Backup vermessen (iPhone, iOS, Signal [Version entfernt]): die App ist
-installiert und belegt fuenf Domains, aber diese enthalten zusammen zwoelf
-Dateien und weniger als 40 KB - ausschliesslich Einstellungs-Plists,
+Am echten Backup vermessen: die App ist installiert und belegt fuenf Domains,
+aber diese enthalten zusammen nur eine Handvoll Dateien mit wenigen Dutzend
+Kilobyte - ausschliesslich Einstellungs-Plists,
 WebKit-Caches, eine Lock-Datei und eine Textdatei. Es gibt keine
 Nachrichtendatenbank und keine Mediendateien.
 

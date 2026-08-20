@@ -393,8 +393,8 @@ class Analyzer:
 
         Die Laenge ist ein Parameter, weil die Kosten daran haengen: um eine
         SQLite-Datenbank zu erkennen genuegen 16 Byte, fuer die Medienerkennung
-        braucht es einige Kilobyte. Am echten Backup gemessen ist der
-        Unterschied bei [Anzahl entfernt] Dateien 5,7 gegen [Dauer entfernt].
+        braucht es einige Kilobyte. Am echten Backup gemessen kosten die
+        Kilobyte rund dreizehnmal so viel Zeit wie die 16 Byte.
         """
         path = self.backup.payload_path(entry.file_id)
         if not path.is_file():
@@ -555,7 +555,7 @@ class Analyzer:
             if not path.is_file():
                 continue
             # Zuerst die 16-Byte-Signatur: von jeder Datei mehrere Kilobyte zu
-            # lesen kostete bei [Anzahl entfernt] WhatsApp-Dateien 79 statt [Dauer entfernt].
+            # lesen kostete am echten Backup rund dreizehnmal so viel Zeit.
             if not self._is_sqlite(entry):
                 continue
             detected, _ = self._inspect(entry)

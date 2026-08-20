@@ -12,3 +12,7 @@
 # 00008030 is an A13 model marker, the remainder is a counting sequence.
 # See tests/support/backup_builder.py.
 00008030-001A2B3C4D5E6F70
+
+# Synthetic size value in the test suite, not a real backup. It exists to check
+# the number formatter. See tests/test_analysis.py and test_logging_redaction.py.
+4.82 GB

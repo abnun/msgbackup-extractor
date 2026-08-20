@@ -20,6 +20,12 @@ PATTERNS=(
   'MobileSync/Backup/[0-9a-fA-F]{8,}'    # a real device backup path
   '[0-9a-f]{8}-[0-9A-F]{16}'             # iPhone UDID, modern form
   'BACKUP_PASSWORD'                      # a password that reached the code
+  # Facts about the author's own device and message volume. A public document
+  # may show what was verified; it must not show how much mail the author has.
+  'iPhone ?[0-9]{1,2}\\b'                  # device model
+  'iOS [0-9]{1,2}\\.[0-9]'                 # installed OS version
+  '[0-9]+[.,][0-9]+ ?(GB|TB)'            # backup or export volume
+  '[0-9]{1,3}[.,][0-9]{3} (Dateien|files|Eintr|entries|Nachrichten|messages)'
 )
 
 hits=0
@@ -55,7 +61,9 @@ if [ "${1:-}" != "--tree" ]; then
   # The pathspec excludes this script and its list from the diffs: they contain
   # the patterns by definition, and once committed they would match themselves
   # forever. Commit messages and authors come from --format and are unaffected.
-  log=$(git log --all -p --format='COMMIT %H %an <%ae> %s' -- . \
+  # %B is the FULL message, not %s: a figure hidden in a commit body would
+  # otherwise slip through unseen.
+  log=$(git log --all -p --format='COMMIT %H %an <%ae>%n%B' -- . \
         ':!scripts/check-sensitive.sh' ':!scripts/sensitive-allowlist.txt' 2>/dev/null)
   hist_hits=0
   for p in "${PATTERNS[@]}"; do
