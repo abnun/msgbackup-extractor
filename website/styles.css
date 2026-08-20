@@ -1,0 +1,137 @@
+/* Vorläufiges Stylesheet für die Rechtsseiten.
+ *
+ * Die Startseite steht noch nicht; sie bringt später ihre eigene visuelle Welt
+ * mit und ersetzt diese Datei. Zwei Dinge müssen dabei erhalten bleiben:
+ *
+ *   1. `.mail-at::before { content: "@" }` — die E-Mail-Adresse ist im HTML
+ *      absichtlich zerlegt, damit ein Adressensammler im Quelltext kein
+ *      `etwas@etwas.de` findet. Ohne diese Regel steht dort „abnungmx.de".
+ *   2. Die Klasse `.container` als Textspalte.
+ *
+ * Es gibt keine externen Ressourcen: keine CDN, keine Google Fonts, kein
+ * Tracking. Das gilt für die Startseite ebenso — die Software verspricht
+ * Offline-Betrieb, ihre Internetseite soll das nicht unterlaufen.
+ */
+
+:root {
+  --grund: #fbfaf8;
+  --text: #1c1d21;
+  --leise: #5c5f68;
+  --linie: #e2ded7;
+  --akzent: #1a4d6d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --grund: #121316;
+    --text: #e8e6e1;
+    --leise: #9a9da5;
+    --linie: #2a2c32;
+    --akzent: #7fb3d3;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--grund);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  text-underline-offset: 0.15em;
+}
+
+.container {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+main.container {
+  padding-top: clamp(2.5rem, 8vw, 5rem);
+  padding-bottom: 3rem;
+}
+
+h1 {
+  margin: 0 0 0.25rem;
+  font-size: clamp(1.75rem, 5vw, 2.25rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-weight: 620;
+}
+
+h2 {
+  margin: 2.5rem 0 0.5rem;
+  font-size: 1.0625rem;
+  line-height: 1.3;
+  font-weight: 640;
+  letter-spacing: 0.01em;
+}
+
+/* Ein Haarstrich über jeder Überschrift gliedert die lange Seite, ohne sie
+   in Kästen zu zerlegen. */
+h2::before {
+  content: "";
+  display: block;
+  width: 2.25rem;
+  border-top: 2px solid var(--akzent);
+  margin-bottom: 0.9rem;
+}
+
+p {
+  margin: 0 0 0.9rem;
+}
+
+small {
+  color: var(--leise);
+  font-size: 0.875rem;
+}
+
+a {
+  color: var(--akzent);
+  text-decoration-thickness: 1px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+
+strong {
+  font-weight: 640;
+}
+
+/* Das @ steht nur hier, nicht im Quelltext. Ohne JavaScript bleibt die Adresse
+   trotzdem vollständig lesbar — sie ist dann nur nicht anklickbar. */
+.mail-at::before {
+  content: "@";
+}
+
+footer.container {
+  border-top: 1px solid var(--linie);
+  padding-top: 1.25rem;
+  padding-bottom: 3rem;
+  color: var(--leise);
+  font-size: 0.9375rem;
+}
+
+footer.container p {
+  margin: 0;
+}

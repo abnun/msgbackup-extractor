@@ -1228,3 +1228,72 @@ verengen — dann schützt es den nächsten Fall nicht mehr. Stattdessen
 Liste greift auch in der Historie, weil ein alter Commit nicht nachträglich
 kommentiert werden kann. Ein verengtes Muster verschweigt die Ausnahme, eine
 Liste schreibt sie auf.
+
+---
+
+## 28. README zweisprachig, Rechtsseiten und die Repository-Beschreibung
+
+### 28.1 Zwei Dateien, nicht eine
+
+`README.md` (Englisch) und `README.de.md` (Deutsch), oben jeweils ein
+Sprachumschalter. Nicht beide Sprachen in einer Datei: GitHub rendert die
+README auf der Projektseite vollständig, eine zweisprachige Datei hätte also die
+doppelte Länge und jeder Leser hätte die Hälfte übersprungen.
+
+Englisch ist die Datei, die GitHub anzeigt, weil das Repository öffentlich ist.
+Deutsch ist vollständig, nicht gekürzt — eine „Kurzfassung auf Deutsch" wäre die
+schlechtere von zwei Lösungen.
+
+**Was das kostet:** jede inhaltliche Änderung muss künftig in beide Dateien.
+Das ist der Preis und lässt sich nicht wegautomatisieren, ohne einen Übersetzer
+zur Laufzeit einzubauen — was diesem Projekt verboten ist. Die Zusagen-Tabelle,
+die Zahlen aus dem echten Backup und die Einschränkungsliste sind die Stellen,
+an denen ein Auseinanderlaufen wirklich schadet.
+
+Das Designdokument bleibt deutsch: Entscheidungsprotokoll des Autors, kein
+Nutzertext. Die Programmausgaben bleiben ebenfalls deutsch — sie zu übersetzen
+ist eine eigene Aufgabe mit eigenen Tests.
+
+### 28.2 Die Repository-Beschreibung
+
+Sie war deutsch und behauptete „(Threema, WhatsApp, Signal)", was Signal in eine
+Reihe mit den beiden anderen stellt. Signal wird nur erkannt. Jetzt englisch und
+mit dem Grund im Satz: „Signal is detected but excludes its data from iOS
+backups." Eine Beschreibung, die drei Messenger nennt und dann in der README
+zurücknimmt, ist die Art Halbwahrheit, die dieses Projekt sonst vermeidet.
+
+### 28.3 Rechtsseiten vor der Startseite
+
+`website/impressum.html` und `website/datenschutz.html` stehen, `index.html`
+noch nicht. Übernommen aus dem Schwesterprojekt „chefsachen", weil die
+Abschnitte zu GitHub-Pages-Hosting, USA-Übermittlung (Data Privacy Framework,
+Angemessenheitsbeschluss vom 10.07.2023), Betroffenenrechten und
+Widerspruchsrecht dort schon durchdacht sind. Geändert:
+
+- E-Mail auf `abnun@gmx.de`.
+- Der PayPal-Abschnitt entfällt, es gibt keinen Spendenlink.
+- **Der Abschnitt zur Software ist ein anderer.** Chefsachen ruft für die
+  Versionsprüfung eine Datei bei GitHub ab; hier gibt es das nicht. Die
+  Erklärung sagt das nicht nur zu, sondern nennt den Nachweis: kein Modul
+  importiert ein Netzwerkmodul, statisch und dynamisch bei jedem Testdurchlauf
+  geprüft.
+- Neu: die Bitte, **keine extrahierten Nachrichtendaten** einzusenden, samt
+  Zusage, unaufgefordert zugesandte ungelesen zu löschen. Bei einem Werkzeug,
+  das Nachrichten Dritter auspackt, ist der Fehlerbericht mit angehängtem Chat
+  der naheliegende Unfall.
+- Neu: ein Abschnitt zur Verantwortung des Anwenders (Haushaltsausnahme
+  Art. 2 Abs. 2 lit. c DSGVO, § 202a StGB) und ein Markenabschnitt im
+  Impressum.
+
+Deutsch, weil ein Impressum nach § 5 DDG und eine Datenschutzerklärung nach
+DSGVO Besucher in Deutschland adressieren und der deutsche Text derjenige ist,
+der rechtlich tragen muss. Eine englische Übersetzung wäre nachrangig und müsste
+das kenntlich machen.
+
+**Ein vorläufiges Stylesheet gehört dazu.** Die Startseite bringt später ihre
+eigene visuelle Welt und ersetzt `styles.css`. Ohne irgendein Stylesheet stünde
+auf den Seiten aber „abnungmx.de": die Adresse ist im HTML in Spans zerlegt, und
+das `@` liefert `.mail-at::before` aus dem CSS, damit ein Adressensammler im
+Quelltext keine vollständige Adresse findet. Diese Regel und `.container` muss
+jedes Ersatz-Stylesheet behalten; es steht als Kommentar in der Datei und in
+`website/README.md`.

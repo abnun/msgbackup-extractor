@@ -1,5 +1,7 @@
 # msgbackup-extractor
 
+**English** · [Deutsch](README.de.md)
+
 Recover your own photos, videos, voice messages and documents from a local
 Apple iPhone backup — Threema and WhatsApp — without handing anything to a
 cloud service.
