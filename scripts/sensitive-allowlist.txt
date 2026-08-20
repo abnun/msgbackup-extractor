@@ -1,0 +1,14 @@
+# Literal strings that match a pattern in check-sensitive.sh but are provably
+# not sensitive. One per line, with a reason. Lines starting with # are ignored.
+#
+# This file exists so every exception is written down and reviewable. Do not
+# weaken a pattern instead of adding an entry here: the pattern protects the
+# next case, the entry only excuses this one.
+#
+# An entry also covers the commit history, because an old commit cannot be
+# annotated after the fact.
+
+# Synthetic device ID of the test fixture generator. Invented; the prefix
+# 00008030 is an A13 model marker, the remainder is a counting sequence.
+# See tests/support/backup_builder.py.
+00008030-001A2B3C4D5E6F70

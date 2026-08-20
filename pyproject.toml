@@ -5,11 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "msgbackup-extractor"
 version = "0.1.0"
-description = "Lokaler Extractor fuer Messenger-Daten aus Apple-iPhone-Backups (macOS)"
+description = "Offline extractor for messenger data from local Apple iPhone backups"
 readme = "README.md"
 requires-python = ">=3.12"
-license = "MIT"
-authors = [{ name = "Mark Mueller" }]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Markus Mueller" }]
 keywords = ["ios", "backup", "forensics", "threema", "whatsapp", "signal", "offline"]
 classifiers = [
     "Development Status :: 3 - Alpha",

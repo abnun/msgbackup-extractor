@@ -1149,3 +1149,82 @@ Was sie **nicht** leisten: bestätigen, dass Apples Geräte-App ihre Backups
 tatsächlich unter `%USERPROFILE%\Apple\MobileSync\Backup` ablegt. Diese Pfade
 stammen aus der Dokumentation. Das steht als Einschränkung in der README, statt
 Windows-Unterstützung zu behaupten, die niemand nachgeprüft hat.
+
+---
+
+## 27. Lizenz, README-Sprache und der Sensibel-Daten-Gate
+
+### 27.1 Von MIT zu Apache-2.0
+
+Die erste Lizenzwahl (MIT) habe ich selbst getroffen, ohne zu fragen. Bei einem
+Werkzeug, das fremde Nachrichtendaten anfasst, sind zwei Eigenschaften von
+Apache-2.0 hier konkret nützlich und nicht bloß formal:
+
+**§7 und §8 – Gewährleistung und Haftung.** MIT erledigt das in einem Satz.
+Apache-2.0 hat dafür zwei eigene, ausdrückliche Abschnitte. Wer dieses Werkzeug
+auf ein Backup anwendet, riskiert im Zweifel Daten Dritter; ein knapper
+Halbsatz ist dafür die schwächere Grundlage.
+
+**§4(b) – Änderungen müssen gekennzeichnet werden.** Das ist der eigentliche
+Grund. Der Wert dieses Projekts liegt nicht im Code, sondern in den
+nachgewiesenen Garantien: nur lesender Zugriff, kein Netz, Hashvergleich. Wer
+den Read-only-Guard oder die Integritätsprüfung entfernt und das Ergebnis
+weitergibt, muss die Änderung unter Apache-2.0 kenntlich machen. Unter MIT
+nicht. Die Pflicht ist nicht durchsetzbar wie ein Copyleft, aber sie macht die
+Manipulation zur Lizenzverletzung statt zur Geschmacksfrage.
+
+Nicht gewählt: Copyleft (GPL/AGPL). Es würde die Einbettung in andere Werkzeuge
+behindern, ohne die beiden Punkte oben besser zu lösen.
+
+Zusätzlich `NOTICE` – von Apache-2.0 §4(d) nicht verlangt, aber dort
+vorgesehen. Dort stehen Zweckbestimmung (Haushaltsausnahme Art. 2 Abs. 2 lit. c
+DSGVO, § 202a StGB), Markenhinweis nach §6 und die Lizenzen der Dependencies.
+§6 ist hier einschlägig: „Threema", „WhatsApp" und „Signal" stehen im Projekt,
+und §6 erlaubt genau diesen Gebrauch – die Beschreibung der Herkunft –, nicht
+mehr.
+
+**PEP 639.** `license = "Apache-2.0"` und der Klassifikator
+`License :: OSI Approved :: …` schließen sich in setuptools ≥ 77 aus; der Build
+bricht ab. Der Klassifikator ist weg, `license-files = ["LICENSE", "NOTICE"]`
+nimmt beide Dateien ins Wheel.
+
+Der Klassifikator `Operating System :: Microsoft Windows` fehlt bewusst.
+Windows ist implementiert, aber nie auf Windows gelaufen (§26); ein
+Klassifikator wäre eine Support-Behauptung.
+
+### 27.2 README auf Englisch, 799 → 654 Zeilen
+
+Die deutsche README war auf 799 Zeilen gewachsen, weil sie Anleitung und
+Begründung mischte. Die Begründungen stehen hier ausführlicher — sie waren
+dort Dopplung. Geblieben ist, was man zum Benutzen braucht, plus die
+Einschränkungen. Was gestrichen wurde, ist nicht verloren, sondern hat hier
+schon einen Abschnitt.
+
+Englisch, weil das Repository öffentlich ist. Dieses Dokument bleibt deutsch:
+es ist das Entscheidungsprotokoll des Autors, kein Nutzertext. Die
+Programmausgaben bleiben ebenfalls deutsch — sie zu übersetzen wäre eine eigene
+Aufgabe mit eigenen Tests, keine Nebenwirkung einer README-Überarbeitung.
+
+### 27.3 `scripts/check-sensitive.sh`
+
+Der Vorfall beim ersten Veröffentlichen — Push in ein öffentliches Repository,
+obwohl die Prüfung 17 Treffer meldete — hatte zwei Ursachen: die Prüfung hing per `&&` an einem
+Befehl, statt ihn zu blockieren, und das Skript lag im Scratchpad und war beim
+nächsten Mal weg. Beides ist jetzt behoben: das Skript liegt im Repository,
+liefert Exit 1 und wird vor jedem Push aufgerufen.
+
+Es prüft **Arbeitsbaum und vollständige Historie**. Ein sauberer Arbeitsbaum
+sagt nichts über einen früheren Commit; genau das war der Fehler.
+
+Zusätzlich prüft es auf `filter-branch`-Reste (`.git-rewrite`,
+`refs/original`). Die sind von keinem Branch erreichbar, liegen aber in der
+Objektdatenbank — `git push --mirror` nähme sie mit. Im Repository lag noch ein
+leeres `.git-rewrite` von der Bereinigung.
+
+**Ausnahmen stehen in einer Liste, nicht im Muster.** Die erfundene UDID des
+Fixture-Generators trifft das UDID-Muster. Naheliegend wäre, das Muster zu
+verengen — dann schützt es den nächsten Fall nicht mehr. Stattdessen
+`scripts/sensitive-allowlist.txt`: literale Zeichenketten mit Begründung. Die
+Liste greift auch in der Historie, weil ein alter Commit nicht nachträglich
+kommentiert werden kann. Ein verengtes Muster verschweigt die Ausnahme, eine
+Liste schreibt sie auf.

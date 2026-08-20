@@ -1,799 +1,666 @@
-# Messenger Backup Extractor
+# msgbackup-extractor
 
-Lokales Kommandozeilenwerkzeug, das Messenger-Daten aus einem lokalen
-Apple-iPhone-Backup identifiziert und in eine normale Dateistruktur exportiert.
-Entwickelt und erprobt auf **macOS**; **Windows** ist implementiert, aber nicht
-an einem echten Backup getestet (siehe [Voraussetzungen](#voraussetzungen)).
+Recover your own photos, videos, voice messages and documents from a local
+Apple iPhone backup — Threema and WhatsApp — without handing anything to a
+cloud service.
 
-Unterstützt werden **Threema**, **WhatsApp** und **Signal**. Die App-Erkennung
-ist als Plugin gebaut; ein weiterer Messenger braucht nur ein neues Profil.
+It runs entirely on your machine, opens the backup **read-only**, and verifies
+every file it writes with SHA-256. Where it cannot be sure, it says so instead
+of guessing.
 
-> **Status:** in Entwicklung.
->
-> | Befehl | Stand |
-> |---|---|
-> | `analyze` | fertig, auch für verschlüsselte Backups |
-> | `database` | fertig, auch für verschlüsselte Backups |
-> | `backups` | fertig |
-> | `extract` | fertig, inkl. Chat-Zuordnung |
-> | `verify` | fertig |
-> | `ui` | fertig |
-> | `collect` | fertig |
->
-> | Messenger | Stand |
-> |---|---|
-> | Threema | vollständig, an echten Daten erprobt |
-> | WhatsApp | vollständig, an echten Daten erprobt |
-> | Signal | erkannt, aber **nicht extrahierbar** — siehe unten |
->
-> An einem echten Backup erprobt: iPhone, iOS, [Menge entfernt], Threema
-> [Version entfernt] — [Anzahl entfernt] Dateien / [Menge entfernt] extrahiert, 0 Fehler, 0
-> Integritätsfehler, 93 % der Medien einem Chat zugeordnet.
->
-> Die Extraktion wird gebaut, sobald die Analyse gegen ein echtes Backup
-> geprüft ist — damit sie sich an der tatsächlich vorgefundenen Struktur
-> orientiert und nicht an Annahmen.
+Developed and verified on **macOS**. **Windows** is implemented but has not been
+run against a real backup — see [Requirements](#requirements).
 
-## Grundsätze
-
-Dieses Programm arbeitet **ausschließlich lokal**:
-
-- keine Netzwerkverbindungen zur Laufzeit (durch Tests erzwungen)
-- keine Cloud-Dienste, keine Telemetrie, keine Analytics
-- das Apple-Backup wird **nur lesend** geöffnet und niemals verändert
-- geschrieben wird ausschließlich in das mit `--output` angegebene Verzeichnis
-- Passwörter nur über `getpass`, nie als CLI-Argument, nie in Logs
-- keine Nachrichteninhalte in Logausgaben, auch nicht mit `--verbose`
-
-Details zum Sicherheitsmodell und zur Architektur:
-[`docs/specs/2026-08-20-messenger-backup-extractor-design.md`](docs/specs/2026-08-20-messenger-backup-extractor-design.md)
-
-## Wie es funktioniert
-
-Sechs Schritte, jeder ein eigener Befehl. Man kann nach jedem aufhören.
-
-```
-  iPhone
-    │  Finder-Backup (lokal, verschlüsselt oder nicht)
-    ▼
-  ~/Library/Application Support/MobileSync/Backup/<UDID>
-    │
-    │  msgx backups     Welche Backups liegen hier?
-    │  msgx analyze     Was steckt drin? (nur lesen, nichts schreiben)
-    │  msgx database    Wie sieht das Schema der App-Datenbank aus?
-    ▼
-  msgx extract  ──────────────────────────────────────┐
-    │                                                 │
-    │  liest das Backup ausschließlich lesend         │
-    ▼                                                 │
-  ~/messenger-extract/export/threema/                 │
-    ├── media/ chats/ databases/ metadata/            │
-    └── export-manifest.json  ◄─── die Nachweisebene ─┘
-    │
-    │  msgx ui        erzeugt index.html aus dem Manifest
-    │  msgx verify    prüft den Export gegen das Manifest
-    ▼
-  index.html im Browser
-    │  auswählen, „Auswahl übernehmen …“, Liste kopieren
-    ▼
-  msgx collect     trägt die Auswahl in einen Ordner zusammen
+```bash
+msgx analyze  --backup "…/MobileSync/Backup/<UDID>"          # what is in there?
+msgx extract  --backup "…" --output ~/export/threema          # write it out
+msgx ui       --output ~/export                                # browse it
 ```
 
-### Was in den einzelnen Schritten passiert
+---
 
-**1. Backup öffnen.** Das Backup besteht aus vier Metadatendateien und 256
-Unterverzeichnissen `00`–`ff`, in denen die Nutzdateien unter ihrer `fileID`
-liegen (SHA-1 von `"<domain>-<relativePath>"`). `Info.plist` und
-`Manifest.plist` sind auch bei verschlüsselten Backups im Klartext — daher
-funktioniert die App-Erkennung ohne Passwort.
+## It proves, it does not promise
 
-**2. Entschlüsseln, falls nötig.** Aus `Manifest.plist` kommt der Keybag; daraus
-wird per PBKDF2 der Passcode-Key abgeleitet, mit dem die Klassenschlüssel per
-AES-Key-Wrap entpackt werden. `Manifest.db` wird damit in ein temporäres
-Verzeichnis **außerhalb** des Backups entschlüsselt. Ein falsches Passwort
-scheitert an der Integritätsprüfung des Key-Wrap — es entsteht kein Datenmüll.
+Every guarantee below has a test that would fail if it stopped being true.
 
-**3. Messenger erkennen.** Nicht über geratene Pfade, sondern über den Bundle
-Identifier, der in den Backup-Metadaten tatsächlich steht. Gesucht wird ein
-Namensraum (`ch.threema.`), damit auch Varianten gefunden werden; mehrere
-Treffer führen zur Rückfrage, nicht zu einer Auswahl.
+| Guarantee | How it is verified |
+|---|---|
+| The backup is never modified | A fingerprint of every file — content, size, mtime — is taken before and after a full run and compared. Counter-tests confirm the fingerprint actually detects changes. |
+| No network access | No source module imports `socket`, `urllib`, `http` or similar. Checked statically, and again dynamically with `socket` disabled. |
+| Exported files are intact | The source SHA-256 is computed from the same bytes that get written; the destination hash is read back afterwards. Only the comparison counts as proof. |
+| No password in logs or arguments | There is no password option. A test introspects every subcommand to keep it that way. |
+| Nothing is guessed | Structure is measured at runtime. When it cannot be established, you get a diagnostic report instead of a result. |
 
-**4. Medien auffinden.** Hier liegt die eigentliche Arbeit. Threema speichert
-über Core Data, und Mediendaten stecken an **zwei** Orten: als Datei in
-`.ThreemaData_SUPPORT/_EXTERNAL_DATA/` oder als Blob **in** der Datenbank. Wer
-nur Dateien kopiert, verliert die zweite Sorte stillschweigend — im
-vermessenen Backup waren das 714 Originale. Die Zuordnung zu Chats läuft über
-`ZMESSAGE` → `ZCONVERSATION`; welche Richtung einer Beziehung den
-Fremdschlüssel trägt, wird zur Laufzeit **gemessen**, weil Core Data das je
-Entität unterschiedlich ablegt.
-
-**5. Extrahieren.** Ein Planer rechnet zuerst aus, was entstehen würde — das ist
-die Grundlage von `--dry-run` *und* des echten Laufs, damit der Probelauf sich
-nicht anders verhalten kann. Dann wird jede Datei einzeln geschrieben: der
-SHA-256 der Quelle entsteht beim Schreiben, der des Ziels wird danach
-nachgelesen, und erst der Vergleich gilt als Nachweis. Eine kaputte Datei
-kostet einen Eintrag im Bericht, nicht den Lauf.
-
-**6. Ansehen und herausholen.** `msgx ui` erzeugt eine in sich geschlossene
-`index.html` aus dem Manifest. Auswählen geschieht im Browser, das Kopieren
-macht wieder die CLI — JavaScript darf auf einer `file://`-Seite lokale Dateien
-anzeigen, aber ihre Bytes nicht lesen.
-
-### Die unterstützten Messenger
-
-Jeder Messenger legt seine Daten anders ab. Was sie unterscheidet, ist keine
-Kleinigkeit — es entscheidet, ob eine Extraktion überhaupt funktioniert:
+Results from a real backup (iPhone, iOS, [Menge entfernt]):
 
 | | Threema | WhatsApp |
 |---|---|---|
-| Datenbank | `ThreemaData.sqlite` | `ChatStorage.sqlite` |
-| Medien | Blobs, teils **in** der Datenbank | **Dateien** unter `Message/Media/` |
-| Referenz | `0x02` + UUID → `_EXTERNAL_DATA/` | Pfad in der DB, Präfix `Message/` fehlt |
-| Vorschaubilder | Blob in `ZIMAGEDATA` | Datei über `ZXMPPTHUMBPATH` |
-| Chat | `ZCONVERSATION` | `ZWACHATSESSION.ZPARTNERNAME` |
-| Beziehungsrichtung | eine Seite **verwaist** | beide tragen |
+| Extracted | [Anzahl entfernt] files · [Menge entfernt] | [Anzahl entfernt] files · [Menge entfernt] |
+| Failures / integrity errors | 0 / 0 | 0 / 0 |
+| Assigned to a chat | [Anteil entfernt] | [Anteil entfernt] |
+| Runtime | [Dauer entfernt] | ~6 min |
 
-Beide sind Core-Data-Stores und teilen deshalb die Zeitrechnung (ab 2001) und
-das Vermessen der Beziehungsrichtungen. Dass die Richtung **gemessen** und nicht
-angenommen wird, ist bei Threema notwendig: dort ist `ZIMAGEDATA.ZMESSAGE` zu
-100 % verwaist, und wer dort joint, hält die Chat-Zuordnung für unmöglich.
+---
 
-#### Signal ist nicht extrahierbar
+## How it works
 
-Signal wird erkannt, aber es gibt nichts zu holen: die App schließt ihr
-Datenverzeichnis vom iOS-Backup aus. Im gemessenen Backup lagen in fünf
-Signal-Domains insgesamt **zwölf Dateien mit 41 KB** — Einstellungs-Plists,
-WebKit-Caches, eine Lock-Datei. Keine Nachrichtendatenbank, keine Medien.
+Six steps, each its own command. You can stop after any of them.
 
-Das Profil existiert genau deshalb: damit der Bericht den Grund nennt, statt
-dass ein leeres Ergebnis wie ein Fehler dieses Programms aussieht. Signal-Daten
-überträgt man mit Signals eigenem Weg (Gerätewechsel oder Signal-Backup).
+```
+  iPhone
+    │  local backup (Finder on macOS, Apple Devices app on Windows)
+    ▼
+  MobileSync/Backup/<UDID>
+    │
+    │  msgx backups     which backups are on this machine?
+    │  msgx analyze     what is inside? (read-only, writes nothing)
+    │  msgx database    what does the app's database schema look like?
+    ▼
+  msgx extract  ───────────────────────────────────────┐
+    │  reads the backup strictly read-only             │
+    ▼                                                  │
+  export/threema/                                      │
+    ├── media/ chats/ databases/ metadata/             │
+    └── export-manifest.json  ◄──── the record of it ──┘
+    │
+    │  msgx ui        builds index.html from the manifest
+    │  msgx verify    checks the export against the manifest
+    ▼
+  index.html in your browser
+    │  select, "hand over selection", copy the list
+    ▼
+  msgx collect     gathers the selection into a folder
+```
 
-### Was das Programm nie tut
+`export-manifest.json` is the hub: `extract` writes it, and `verify`, `ui` and
+`collect` read nothing else. That is why changing the UI costs no new export,
+and why `verify` still works years later on a copy without the backup.
 
-Das Backup wird **nur gelesen**. SQLite-Verbindungen laufen mit
-`mode=ro&immutable=1`, damit nicht einmal eine `-wal`-Datei daneben entsteht.
-Geschrieben wird ausschließlich in das mit `--output` angegebene Verzeichnis,
-und ein Guard prüft jeden Zielpfad dagegen. Belegt ist das durch einen Test,
-der einen Fingerabdruck des gesamten Backups vor und nach einem vollen
-Extraktionslauf vergleicht — samt Gegenproben, dass der Fingerabdruck
-Veränderungen wirklich erkennt.
+### What happens in each step
 
-Es gibt **keine Netzwerkfunktionalität**. Kein Modul des Pakets importiert
-`socket`, `urllib`, `http` oder Ähnliches; ein Test prüft das statisch und
-zusätzlich dynamisch mit gesperrtem `socket`.
+**Open the backup.** A backup is four metadata files plus 256 directories `00`
+… `ff` holding payload files named by their `fileID` (SHA-1 of
+`"<domain>-<relativePath>"`). `Info.plist` and `Manifest.plist` are readable
+even in an encrypted backup, which is why app detection works without a
+password.
 
-### Wo was liegt
+**Decrypt if needed.** The keybag comes from `Manifest.plist`; PBKDF2 derives
+the passcode key, AES Key Wrap unwraps the class keys, and `Manifest.db` is
+decrypted into a temporary directory **outside** the backup. A wrong password
+fails the key wrap's integrity check — you get a clear error, never garbage.
 
-| Datei | Aufgabe |
-|---|---|
-| `core/backup.py` | einziger Besitzer des Backup-Pfads, alles read-only |
-| `core/keybag.py`, `core/encryption.py` | Keybag-Parsing und Entschlüsselung |
-| `core/manifest.py` | `Manifest.db` mit Schema-Introspektion |
-| `core/session.py` | bündelt Passwort, Keybag und Manifest-Zugriff |
-| `core/media.py` | Magic Bytes vor MIME vor Endung |
-| `core/paths.py` | Traversal-Abwehr, Output-Guard, Cloud-Guard |
-| `apps/base.py`, `apps/threema.py` | Messenger-Profile als Plugins |
-| `extract/planner.py`, `extract/runner.py` | Plan rechnen, dann ausführen |
-| `extract/collect.py`, `extract/verify.py` | Auswahl einsammeln, Export prüfen |
-| `ui/builder.py`, `ui/template.html` | die lokale Ansicht |
+**Identify the messenger.** Not by guessing paths, but by the bundle
+identifier actually present in the backup metadata. A namespace is searched
+(`ch.threema.`) so variants are found; several matches lead to a question, not
+to a pick.
 
-Die vollständige Architektur samt aller Entscheidungen und der am echten Backup
-gemessenen Befunde steht in
-[`docs/specs/2026-08-20-messenger-backup-extractor-design.md`](docs/specs/2026-08-20-messenger-backup-extractor-design.md).
+**Locate the media.** This is where the work is. Threema stores blobs, partly
+*inside* its database; WhatsApp stores real files and records their paths.
+Which side of a Core Data relationship carries the foreign key is **measured at
+runtime**, because it differs per entity.
 
-## Voraussetzungen
+**Extract.** A planner first computes what would happen — that same plan backs
+`--dry-run` *and* the real run, so a rehearsal cannot behave differently. Then
+each file is written on its own: hash the source while writing, read the
+destination hash back, compare. A broken file costs one report entry, not the
+run.
+
+**Browse and pull out.** `msgx ui` builds a self-contained `index.html` from
+the manifest. Selecting happens in the browser; copying is done by the CLI,
+because JavaScript on a `file://` page may *display* local files but cannot
+*read* their bytes.
+
+### What it never does
+
+The backup is **only read**. SQLite connections use `mode=ro&immutable=1` so
+not even a `-wal` file appears next to the original. Writes go exclusively to
+the directory given as `--output`, and a guard checks every destination path
+against it.
+
+There is **no network code**. Everything platform-specific lives in one module
+(`core/platforms.py`), and two guard tests keep it there.
+
+Full architecture and every measured finding:
+[`docs/specs/2026-08-20-messenger-backup-extractor-design.md`](docs/specs/2026-08-20-messenger-backup-extractor-design.md)
+(in German).
+
+---
+
+## Supported messengers
+
+| | Threema | WhatsApp | Signal |
+|---|---|---|---|
+| Status | complete, verified on real data | complete, verified on real data | detected only |
+| Database | `ThreemaData.sqlite` | `ChatStorage.sqlite` | not in the backup |
+| Media | blobs, partly *in* the database | files under `Message/Media/` | — |
+| Reference | `0x02` + UUID → `_EXTERNAL_DATA/` | path in the DB, missing the `Message/` prefix | — |
+| Chat names | `ZCONVERSATION` | `ZWACHATSESSION.ZPARTNERNAME` | — |
+| Relationship direction | one side is **fully orphaned** | both sides carry | — |
+
+Both are Core Data stores, so they share the epoch (2001) and the
+direction-measuring logic. Measuring rather than assuming is not academic: in
+Threema, `ZIMAGEDATA.ZMESSAGE` is 100 % orphaned. Join there and you conclude
+chat assignment is impossible.
+
+### Signal cannot be extracted
+
+Signal is detected, but there is nothing to get: the app excludes its data
+directory from iOS backups. In the backup measured here, five Signal domains
+held **twelve files totalling 41 KB** — preference plists, WebKit caches, a
+lock file. No message database, no media.
+
+The profile exists precisely to say so, rather than letting an empty result
+look like a bug in this tool. Signal data moves via Signal's own path (device
+transfer or a Signal backup).
+
+Adding a messenger means writing one profile. `AppProfile` survived WhatsApp
+without a change, even though its storage model is fundamentally different.
+
+---
+
+## Requirements
 
 | | macOS | Windows |
 |---|---|---|
-| Betriebssystem | macOS (entwickelt und geprüft) | Windows 10 oder 11 (siehe Einschränkung unten) |
-| Python | 3.12 oder neuer | 3.12 oder neuer |
-| Backup | lokales Finder-Backup | lokales Backup aus der Apple-Geräte-App oder iTunes |
-| Zusätzlich | „Festplattenvollzugriff" für das Terminal | nichts — die Backups liegen im Benutzerprofil |
-| Platz | etwa so viel wie das Backup groß ist | ebenso |
+| OS | macOS (developed and verified here) | Windows 10 or 11 (see below) |
+| Python | 3.12 or newer | 3.12 or newer |
+| Backup | local Finder backup | local backup from the Apple Devices app or iTunes |
+| Extra | Full Disk Access for the terminal | nothing — backups live in your user profile |
+| Disk space | roughly the size of the messenger's data | same |
 
-### Zum Platzbedarf
+The chat structure costs **no** extra space: it is hardlinked to the same data.
+In the runs above that saved [Menge entfernt] for Threema and [Menge entfernt] for WhatsApp. The
+backup itself is never copied.
 
-Der Export ist etwa so groß wie die Daten des Messengers im Backup. Die
-Chat-Struktur kostet **nichts** zusätzlich, weil sie per Hardlink auf dieselben
-Daten zeigt — im erprobten Fall sparte das [Menge entfernt] bei Threema und [Menge entfernt] bei
-WhatsApp. Das Backup selbst bleibt unangetastet und muss nicht kopiert werden.
+### Windows is untested
 
-### Einschränkung: Windows ist nicht erprobt
+The core is platform-independent: SQLite, plistlib, hashlib, `cryptography` and
+the format parsing run anywhere Python runs. Exactly four things depend on the
+operating system, and they all live in `core/platforms.py`: where backups are
+stored, which folders sync to a cloud, how the clipboard reaches a pipe, and
+what to do about missing permissions.
 
-Entwickelt und an einem echten Backup geprüft wurde ausschließlich auf **macOS**.
-Der Kern ist plattformunabhängig — SQLite, plistlib, hashlib, `cryptography`
-und das Formatparsing laufen überall, wo Python läuft. Betriebssystemabhängig
-sind genau vier Dinge, und die stehen gesammelt in `core/platforms.py`: wo
-Backups liegen, welche Ordner in die Cloud synchronisiert werden, wie die
-Zwischenablage in eine Pipe kommt, und was bei fehlenden Rechten zu tun ist.
+The Windows paths come from Apple's documentation and the usual behaviour of
+the Apple Devices app — **not from a test run on a Windows machine**. Tests fake
+the operating system and check that the right paths and hints come out; they
+cannot confirm that Apple actually stores backups there.
 
-Die Windows-Pfade stammen aus Apples Dokumentation und dem üblichen Verhalten
-der Apple-Geräte-App, **nicht aus einem Testlauf auf einem Windows-Rechner**.
-Tests täuschen das Betriebssystem vor und prüfen, dass die richtigen Pfade und
-Hinweise herauskommen; dass Apple die Backups dort tatsächlich ablegt, können
-sie nicht bestätigen.
+If no backup is found, `--backup` with a full path works and the rest of the
+pipeline does not care. A report from anyone who tries it is welcome.
 
-Findet das Programm auf Windows kein Backup, hilft `--backup` mit dem vollen
-Pfad — der restliche Ablauf ist davon unabhängig. Wenn du es dort ausprobierst,
-ist ein Bericht willkommen.
+---
 
 ## Installation
 
 ### macOS
 
 ```bash
-# 1. Python 3.12 prüfen
-python3 --version
+python3 --version                      # 3.12 or newer
 
-# 2. Projekt holen
 git clone https://github.com/abnun/msgbackup-extractor.git
 cd msgbackup-extractor
 
-# 3. Virtuelle Umgebung anlegen — NICHT in iCloud Drive, siehe unten
-python3 -m venv ~/.venvs/msgbackup-extractor
+python3 -m venv ~/.venvs/msgbackup-extractor    # NOT inside iCloud Drive, see below
 ~/.venvs/msgbackup-extractor/bin/pip install -e ".[dev]"
 
-# 4. Prüfen
 ~/.venvs/msgbackup-extractor/bin/msgx --version
 ~/.venvs/msgbackup-extractor/bin/python -m pytest
 ```
 
-Bequemer wird es mit einem Alias in `~/.zshrc`:
+Convenient with an alias in `~/.zshrc`:
 
 ```bash
 alias msgx="$HOME/.venvs/msgbackup-extractor/bin/msgx"
 ```
 
-**„Festplattenvollzugriff" erteilen.** Ohne diese Berechtigung kann das
-Terminal `~/Library/Application Support/MobileSync/Backup/` nicht lesen:
-Systemeinstellungen → Datenschutz & Sicherheit → Festplattenvollzugriff →
-Terminal hinzufügen → **Terminal beenden und neu starten**. Der letzte Schritt
-ist nötig, die Änderung greift nicht im laufenden Prozess.
+**Grant Full Disk Access.** Without it the terminal cannot read
+`~/Library/Application Support/MobileSync/Backup/`: System Settings → Privacy &
+Security → Full Disk Access → add Terminal → **quit and restart Terminal**. The
+restart is required; the change does not apply to a running process.
 
-### Windows
-
-```powershell
-# 1. Python 3.12 prüfen (aus python.org oder dem Microsoft Store)
-py --version
-
-# 2. Projekt holen
-git clone https://github.com/abnun/msgbackup-extractor.git
-cd msgbackup-extractor
-
-# 3. Virtuelle Umgebung anlegen
-py -m venv .venv
-.\.venv\Scripts\pip install -e ".[dev]"
-
-# 4. Prüfen
-.\.venv\Scripts\msgx --version
-.\.venv\Scripts\python -m pytest
-```
-
-Danach zeigt
-
-```powershell
-.\.venv\Scripts\msgx backups
-```
-
-welche Backups gefunden wurden. Gesucht wird an beiden üblichen Orten, weil
-iTunes und die Apple-Geräte-App unterschiedliche Verzeichnisse verwenden:
-
-```text
-%APPDATA%\Apple Computer\MobileSync\Backup     (iTunes)
-%USERPROFILE%\Apple\MobileSync\Backup          (Apple-Geräte-App)
-```
-
-Findet es nichts, nennt die Meldung beide Pfade samt Zustand. Dann hilft der
-volle Pfad:
-
-```powershell
-.\.venv\Scripts\msgx analyze --backup "C:\Users\DU\Apple\MobileSync\Backup\<UDID>"
-```
-
-**Bei der Auswahl aus der Ansicht** heißt der Befehl für die Zwischenablage
-unter Windows anders; der Übergabedialog nennt automatisch den richtigen:
-
-```powershell
-powershell -Command Get-Clipboard | msgx collect --output EXPORT --target ZIEL --selection -
-```
-
-### Wichtig auf macOS: venv nicht in iCloud Drive anlegen
-
-Liegt das virtuelle Environment innerhalb von
-`~/Library/Mobile Documents/com~apple~CloudDocs/` (iCloud Drive), setzt der
-iCloud-File-Provider auf allen `.pth`-Dateien das macOS-Flag `UF_HIDDEN`.
-Python 3.12 überspringt versteckte `.pth`-Dateien:
-
-```python
-# CPython Lib/site.py, addpackage()
-if ((getattr(st, 'st_flags', 0) & stat.UF_HIDDEN) or ...):
-    _trace(f"Skipping hidden .pth file: {fullname!r}")
-    return
-```
-
-Folge: der Editable-Install wird **stillschweigend ignoriert** und
-`import msgbackup_extractor` schlägt fehl. `chflags nohidden` hilft nicht — das
-Flag wird binnen Sekunden neu gesetzt. Deshalb liegt das venv außerhalb von
-iCloud Drive, auch wenn der Quellcode dort liegt. Nachprüfbar mit:
+**Do not put the venv inside iCloud Drive.** The iCloud file provider sets the
+macOS `UF_HIDDEN` flag on every `.pth` file, and Python 3.12 skips hidden
+`.pth` files (`Lib/site.py`, `addpackage()`). The editable install is then
+**silently ignored** and `import msgbackup_extractor` fails. `chflags nohidden`
+does not stick — the flag returns within seconds. Verify with:
 
 ```bash
 PYTHONVERBOSE=1 python -c "pass" 2>&1 | grep "Skipping hidden"
 ```
 
-## Ablage der Daten
+### Windows
 
-Backup und Export gehören in ein **lokales, nicht synchronisiertes**
-Verzeichnis. Das Apple-Backup ist die gemeinsame Quelle für alle Messenger, die
-Exporte werden pro Messenger getrennt:
+```powershell
+py --version                           # 3.12 or newer
+
+git clone https://github.com/abnun/msgbackup-extractor.git
+cd msgbackup-extractor
+
+py -m venv .venv
+.\.venv\Scripts\pip install -e ".[dev]"
+
+.\.venv\Scripts\msgx --version
+.\.venv\Scripts\python -m pytest
+```
+
+`msgx backups` searches both usual locations, because iTunes and the Apple
+Devices app use different directories:
+
+```text
+%APPDATA%\Apple Computer\MobileSync\Backup     (iTunes)
+%USERPROFILE%\Apple\MobileSync\Backup          (Apple Devices app)
+```
+
+If nothing is found, the message names both paths and their state. Then use the
+full path:
+
+```powershell
+.\.venv\Scripts\msgx analyze --backup "C:\Users\YOU\Apple\MobileSync\Backup\<UDID>"
+```
+
+---
+
+## Where to put the data
+
+Use a **local, unsynced** directory, with one subdirectory per messenger. The
+Apple backup is the shared source; exports are kept apart:
 
 ```
 ~/messenger-extract/
-├── backup/            # das Apple-Backup (read-only)
+├── backup/            the Apple backup (read-only; a symlink is fine)
 │   └── <UDID>/
 └── export/
     ├── threema/
     ├── whatsapp/
-    └── signal/
+    └── index.html     combined view across all exports
 ```
 
-Unter Windows entsprechend, etwa `C:\Users\DU\messenger-extract\`.
+The tool refuses an `--output` inside a cloud-synced container, because the
+operating system would then upload your extracted messages. It knows the usual
+locations per platform (iCloud Drive, OneDrive, Dropbox, Google Drive, pCloud,
+Nextcloud, ownCloud, Seafile, MEGA, Sync.com). Detection is path-based and
+therefore offline; an arbitrarily configured sync folder is beyond it.
+`--allow-cloud-output` overrides the refusal deliberately.
 
-Das Programm bricht ab, wenn `--output` in einem Cloud-Sync-Container liegt.
-Erkannt werden je System die üblichen Ablagen:
+---
 
-| | erkannt als synchronisiert |
-|---|---|
-| macOS | `~/Library/Mobile Documents` (iCloud Drive), `~/Library/CloudStorage` |
-| Windows | `%USERPROFILE%\iCloudDrive`, `%USERPROFILE%\OneDrive` |
-| überall | Dropbox, OneDrive, Google Drive, pCloud, Nextcloud, ownCloud, Seafile, MEGA, Sync.com |
+## Usage
 
-Sonst würde das Betriebssystem die extrahierten Daten selbsttätig hochladen —
-das Programm selbst kommuniziert nicht, das Ergebnis wäre aber dasselbe. Mit
-`--allow-cloud-output` lässt sich das bewusst erzwingen.
-
-Die Erkennung ist rein pfadbasiert und damit offline. Einen beliebig
-konfigurierten Sync-Ordner kann sie nicht kennen — das bleibt deine Aufgabe.
-
-## Verwendung
-
-### Backups finden
+### Find backups
 
 ```bash
 msgx backups
 ```
 
-Listet die Backups unter `~/Library/Application Support/MobileSync/Backup/`
-mit Gerätename, iOS-Version und Verschlüsselungszustand.
+Lists the backups on this machine with device name, iOS version and whether
+they are encrypted.
 
-### Analysieren
+### Analyze
 
 ```bash
 msgx analyze --backup "~/messenger-extract/backup/<UDID>"
 ```
 
-Der Bericht nennt Gerät, iOS-Version, Verschlüsselungszustand, erkannte
-Messenger mit Bundle Identifier und Version, die zugehörigen Domains, die
-gefundenen Medienformate und die identifizierten SQLite-Datenbanken.
+Reports device, iOS version, encryption state, detected messengers with bundle
+identifier and version, their domains, the media formats actually found, and
+the SQLite databases identified. Writes nothing.
 
-Nützliche Optionen:
-
-| Option | Wirkung |
+| Option | Effect |
 |---|---|
-| `--app threema` | nur einen Messenger prüfen |
-| `--bundle-id ID` | eine mehrdeutige Erkennung auflösen |
-| `--metadata-only` | bei verschlüsseltem Backup nicht nach dem Passwort fragen |
-| `--json PFAD` | Bericht zusätzlich als JSON schreiben |
-| `--include-schema` | vollständiges Manifest-Schema in den JSON-Bericht |
-| `--no-media-inspection` | keine Nutzdateien lesen (schneller, ohne Formatstatistik) |
-| `--verbose` | technische Details, weiterhin ohne Nachrichteninhalte |
-| `--show-paths` | Dateipfade im Klartext statt maskiert |
+| `--app threema` | check only one messenger |
+| `--bundle-id ID` | resolve an ambiguous detection |
+| `--metadata-only` | do not ask for the password of an encrypted backup |
+| `--json PATH` | also write the report as JSON |
+| `--include-schema` | include the full manifest schema in the JSON |
+| `--no-media-inspection` | do not read payload files (faster, no format statistics) |
+| `--verbose` | technical detail; still no message content |
+| `--show-paths` | show file paths in clear instead of masked |
 
-### Extrahieren
+### Extract
 
-Erst ein Probelauf — er schreibt nichts:
-
-```bash
-msgx extract \
-    --backup "~/messenger-extract/backup/<UDID>" \
-    --output "~/messenger-extract/export/threema" \
-    --dry-run
-```
-
-Dann echt:
+Rehearse first — this writes nothing:
 
 ```bash
-msgx extract \
-    --backup "~/messenger-extract/backup/<UDID>" \
-    --output "~/messenger-extract/export/threema"
+msgx extract --backup "~/messenger-extract/backup/<UDID>" \
+             --output  "~/messenger-extract/export/threema" --dry-run
 ```
 
-Probelauf und echter Lauf verwenden **denselben Plan**; der Probelauf kann sich
-also nicht anders verhalten als der Ernstfall. Was er nicht tut: Inhaltshashes
-bilden — dafür müsste er alle Daten lesen und wäre so teuer wie der echte Lauf.
-Duplikate werden daher erst beim echten Export erkannt.
-
-Ergebnisstruktur:
+Then for real, without `--dry-run`. Result:
 
 ```
 export/threema/
 ├── media/
-│   ├── images/  videos/  audio/  documents/  other/
-│   └── thumbnails/          Vorschaubilder der App, mit Verweis aufs Original
+│   ├── images/ videos/ audio/ documents/ other/
+│   └── thumbnails/          the app's own previews, linked to their originals
 ├── chats/
-│   ├── <Chatname>/{images,videos,audio,documents,thumbnails}/
-│   └── unassigned/          alles ohne belegbare Zuordnung
-├── databases/               die App-Datenbanken
-├── metadata/                App-Interna (plists, Logs)
+│   ├── <chat name>/{images,videos,audio,documents,thumbnails}/
+│   └── unassigned/          everything without provable assignment
+├── databases/               the app databases
+├── metadata/                app internals (plists, logs)
 ├── reports/extraction-report.json
-└── export-manifest.json
+├── export-manifest.json
+└── index.html               the local view, rebuilt automatically
 ```
 
-`media/` und `chats/` zeigen per **Hardlink** auf dieselben Daten und belegen
-den Speicher deshalb nur einmal. Im erprobten Export sparte das [Menge entfernt].
+`media/` and `chats/` point at the same data via **hardlinks**, so the space is
+used once.
 
-Optionen:
-
-| Option | Wirkung |
+| Option | Effect |
 |---|---|
-| `--dry-run` | schreibt nichts, zeigt nur an |
-| `--no-organize-by-chat` | nur `media/`, keine Chat-Struktur |
-| `--no-hardlinks` | Kopien statt Hardlinks (doppelter Speicherbedarf) |
-| `--no-thumbnails` | Vorschaubilder nicht exportieren |
-| `--deduplicate` | inhaltsgleiche Dateien nur einmal schreiben |
-| `--types image,video` | nur diese Kategorien |
-| `--no-ui` | die lokale Ansicht **nicht** neu erzeugen |
-| `--allow-cloud-output` | Ausgabe in einem Sync-Ordner erzwingen |
+| `--dry-run` | show what would happen, write nothing |
+| `--no-organize-by-chat` | only `media/`, no chat structure |
+| `--no-hardlinks` | real copies instead of hardlinks (double the space) |
+| `--no-thumbnails` | skip the app's preview images |
+| `--deduplicate` | write identical content only once |
+| `--types image,video` | restrict to these categories |
+| `--no-ui` | do not rebuild the local view |
+| `--allow-cloud-output` | force output into a synced folder |
 
-#### Die Ansicht wird automatisch neu erzeugt
+**The view is rebuilt automatically.** After a successful export, `extract`
+rewrites `index.html` in the output directory. The **combined** view lives in
+the parent directory — outside `--output`, where this tool has promised not to
+write. So:
 
-Nach einem erfolgreichen Export schreibt `extract` die `index.html` im
-Ausgabeverzeichnis neu. Du musst `msgx ui` also nicht von Hand aufrufen.
-Abschalten mit `--no-ui`; bei `--dry-run` passiert es ohnehin nicht.
-
-Für die **gemeinsame Übersicht** gilt eine Einschränkung, und die hat einen
-Grund: sie liegt im Elternverzeichnis von `--output` und damit *außerhalb*
-dessen, wohin dieses Programm zugesagt hat zu schreiben. Deshalb:
-
-| Lage im Elternverzeichnis | Was `extract` tut |
+| Parent directory contains | What `extract` does |
 |---|---|
-| dort liegt schon eine von `msgx ui` erzeugte `index.html` | sie wird **mit aktualisiert** — du hast dieses Verzeichnis bereits als Übersichtsort bestimmt |
-| dort liegt **keine** `index.html`, aber weitere Exporte | es wird **nichts** geschrieben; der Bericht nennt den Befehl `msgx ui --output …` |
-| dort liegt eine **fremde** `index.html` | sie bleibt unangetastet — sie zu ersetzen wäre Datenverlust |
+| an `index.html` created by `msgx ui` | updates it too — you already chose that directory as the overview |
+| no `index.html`, but other exports | writes nothing; the report prints the `msgx ui` command |
+| a **foreign** `index.html` | leaves it alone — replacing it would be data loss |
 
-Erkannt wird eine eigene Seite an `<meta name="generator"
-content="msgbackup-extractor">` im Dateikopf. Seiten, die mit einer älteren
-Version erzeugt wurden, tragen diese Kennung nicht und werden deshalb nicht
-angefasst; ein einmaliges `msgx ui --output …` bringt sie auf den neuen
-Stand, danach greift die Automatik.
+Recognition is by `<meta name="generator" content="msgbackup-extractor">` in
+the file head. Pages from an older version lack it and are left untouched; one
+`msgx ui` run brings them up to date.
 
-Scheitert das Erzeugen der Ansicht, ist das ein **Hinweis, kein Fehler**: die
-Dateien sind zu diesem Zeitpunkt schon geschrieben und ihre Hashes geprüft.
-Der Export bleibt gültig, und `msgx ui` lässt sich jederzeit nachholen.
+If building the view fails, that is a **notice, not an error**: the files are
+already written and their hashes verified.
 
-### Ansehen
+### Browse
 
 ```bash
-# Ein Messenger
-msgx ui --output "~/messenger-extract/export/threema"
-
-# Alle Messenger auf einer Seite
-msgx ui --output "~/messenger-extract/export"
+msgx ui --output "~/messenger-extract/export/threema"    # one messenger
+msgx ui --output "~/messenger-extract/export"            # all of them, one page
 ```
 
-Erzeugt `index.html`. Doppelklick genügt — es braucht keinen Server.
+Point `--output` at an export directory for a single-messenger page; point it
+at a directory containing several exports and you get **one page** with a
+switcher (`All | Threema | WhatsApp`) and the messenger as another filter.
 
-Nach einem `extract` brauchst du das normalerweise **nicht**: die Ansicht wird
-dabei automatisch neu erzeugt (siehe oben). `msgx ui` von Hand ist nötig, wenn
-du die gemeinsame Übersicht zum ersten Mal anlegst, wenn du `--no-ui` verwendet
-hast, oder wenn du eine Seite aus einer älteren Version auffrischen willst.
+Double-click the file. No server needed.
 
-Zeigt `--output` auf ein **Exportverzeichnis**, entsteht eine Seite für diesen
-Messenger. Zeigt es auf ein Verzeichnis, das mehrere Exporte enthält, entsteht
-**eine gemeinsame Seite** mit einem Umschalter oben rechts (`Alle | Threema |
-WhatsApp`) und dem Messenger als weiterer Filterdimension. Chatzeilen tragen
-dann eine Messenger-Kennzeichnung, weil sich Chatnamen zwischen Messengern
-wiederholen können.
+The page is **self-contained**: no CDN, no external fonts, no network request,
+no telemetry. Icons are inline SVG rather than emoji so they look the same
+everywhere. The index is embedded rather than fetched, because `fetch()` from
+`file://` fails the browser's same-origin rule. A test checks the page for
+network references.
 
-Die Seite ist **in sich geschlossen**: kein CDN, keine externen Fonts, keine
-Netzverbindung, keine Telemetrie. Symbole sind eingebettetes SVG statt Emoji,
-damit sie überall gleich aussehen. Der Index wird in die Seite eingebettet und
-nicht zur Laufzeit geladen, weil `fetch()` von `file://` an der
-Same-Origin-Regel der Browser scheitert. Bilder und Videos kommen über relative
-Pfade aus dem Export selbst. Ein Test prüft die Seite auf Netzverweise.
+- **Timeline**, newest first, with month separators
+- **Filters** for media type, year, chat and oddities (no chat, no date,
+  preview only, extension ≠ content), plus filename search. Counts are
+  **faceted**: they show what would remain if you picked that option, given
+  every other active filter. Options leading nowhere are dimmed.
+- **Single view** with the original, a video player, metadata and keyboard
+  navigation (`←` `→` browse, `Space` select, `Esc` close)
+- **Selection** via a checkmark per tile, Shift for a range, and "select all in
+  filter" for the active filter. Selection is kept by path, so it survives a
+  filter change.
 
-Aufbau:
+Three deliberate decisions:
 
-- **Zeitachse**, neueste zuerst, mit Monatstrennern
-- **Filter** für Medientyp, Jahr, Chat und Besonderheiten (ohne Chat, ohne
-  Datum, nur Vorschaubild, Endung ≠ Inhalt) sowie Suche im Dateinamen.
-  Die Zahlen sind **facettiert**: sie zeigen, was übrig bliebe, wenn du diese
-  Option wählst — unter Berücksichtigung aller anderen Filter. Wählst du 2025,
-  steht bei „Videos" nicht mehr 179, sondern 20. Optionen, die zu nichts führen,
-  werden abgeblendet, statt eine Zahl zu zeigen, die in eine leere Ansicht
-  führt. Eine Gruppe schränkt sich dabei nicht selbst ein — sonst zeigten alle
-  nicht gewählten Jahre 0 und man käme nicht mehr weg.
-- **Einzelansicht** mit Original, Videoplayer, Metadaten und Tastaturnavigation
-  (`←` `→` blättern, `Leer` auswählen, `Esc` schließen)
-- **Auswahl**: Häkchen auf jeder Kachel, mit gedrückter Umschalttaste ein ganzer
-  Bereich, „Alle im Filter auswählen" für den gerade aktiven Filter. Die Auswahl
-  wird nach Pfad gehalten und übersteht einen Filterwechsel.
+**Previews are not separate entries.** A preview is its original's tile —
+otherwise every image would appear twice. A preview *without* an original stays
+its own entry, marked "preview only": it is often all that remains of a deleted
+file.
 
-Die **Sammelleiste** am unteren Rand erscheint, sobald es etwas zu tun gibt —
-also bei bestehender Auswahl *oder* sobald ein Filter greift. Sie nennt den
-aktiven Filter („Videos · 2023"), damit klar ist, worauf sich „Alle im Filter
-auswählen (42)" bezieht. Ohne Auswahl sind „Auswahl aufheben" und „Auswahl
-übernehmen" ausgegraut. „Filter zurücksetzen" in der Seitenleiste lässt die
-Auswahl unangetastet — das sind zwei verschiedene Absichten.
+**Tiles pick the right resolution.** The previews the messengers store are
+tiny — median 100 × 73 px for WhatsApp. In a 200 CSS-px tile on a Retina
+display that is a fourfold upscale. So the manifest carries the real pixel
+dimensions, read from the file header, and the page offers both resolutions per
+tile via `srcset`. The browser picks the smallest sufficient source.
 
-Zwei Entscheidungen, die dort bewusst so sind:
+**Only message dates appear on the timeline.** For files that only carry a
+filesystem timestamp from the backup — settings, logs, the databases — that
+date would be misleading: it is the same day for all of them and would push the
+newest real media off the top. They appear under "no date"; the single view
+shows their file date separately.
 
-**Kacheln zeigen die passende Auflösung.** Die von den Messengern
-gespeicherten Vorschaubilder sind teils winzig — am gemessenen Export bei
-WhatsApp im Median **100 × 73 Pixel**, bei Threema 384 Pixel kürzere Seite. In
-einer Galeriekachel von rund 200 CSS-Pixeln wäre das auf einem Retina-Display
-eine vier- bis fünffache Hochskalierung, also sichtbar unscharf.
+### Pull out a selection
 
-Deshalb trägt das Export-Manifest die **echten Pixelmaße** jeder Datei, aus dem
-Dateikopf gelesen (JPEG-SOF, PNG-IHDR, GIF, WEBP — Formatparsing, keine
-Bildbibliothek). Die Seite bietet jeder Kachel beide Auflösungen per `srcset`
-an und lässt den Browser je Kachel und Bildschirmdichte selbst wählen. Er nimmt
-die kleinste hinreichende Quelle — das ist seine Aufgabe und er macht es besser
-als eine feste Regel im Generator. Die Statuszeile nennt, wie viele Kacheln auf
-das Original zurückgreifen mussten.
-
-**Vorschaubilder sind keine eigenen Einträge.** Sie sind die Kachel ihres
-Originals — sonst stünde jedes Bild doppelt in der Galerie. Ein Vorschaubild
-*ohne* Original bleibt ein eigener Eintrag und ist als „nur Vorschau"
-gekennzeichnet: es ist häufig alles, was von einem gelöschten Medium übrig ist.
-
-**Auf der Zeitachse steht nur das Nachrichtendatum.** Für Dateien, die nur ein
-Datei-Änderungsdatum aus dem Backup haben — Einstellungen, Logs, die
-App-Datenbanken —, wäre dieses Datum irreführend: es liegt für alle am Tag des
-Backups und hätte die neuesten echten Medien von der Spitze verdrängt. Sie
-erscheinen deshalb unter „Ohne Datum", und die Einzelansicht weist ihr
-Dateidatum getrennt aus.
-
-Das UI wird **allein aus `export-manifest.json`** erzeugt. Es liest die
-Threema-Datenbank nicht erneut, und `msgx ui` lässt sich jederzeit erneut
-aufrufen, ohne neu zu extrahieren.
-
-### Ausgewählte Dateien herausholen
-
-Die Auswahl im UI führt über einen Dialog zu diesem Ablauf:
+The selection dialog leads to:
 
 ```bash
 pbpaste | msgx collect \
     --output "~/messenger-extract/export/threema" \
-    --target ~/Auswahl \
+    --target ~/selection \
     --selection -
 ```
 
-Der Dialog zeigt den fertigen Befehl mit deinen Pfaden und kopiert die Liste
-der ausgewählten Pfade in die Zwischenablage. `--selection -` liest sie von der
-Standardeingabe; alternativ nimmt `--selection DATEI` eine Textdatei mit einem
-relativen Pfad je Zeile (Leerzeilen und `#`-Kommentare werden übergangen).
+On Windows the clipboard command is `powershell -Command Get-Clipboard`; the
+dialog prints the right one for your system. `--selection FILE` also accepts a
+text file with one relative path per line.
 
-| Option | Wirkung |
+| Option | Effect |
 |---|---|
-| `--no-hardlinks` | Kopien statt Hardlinks — nötig, wenn du die Sammlung weitergeben willst |
-| `--keep-structure` | Verzeichnisstruktur des Exports beibehalten statt flach zu sammeln |
-| `--verify` | SHA-256 jeder Datei gegen das Export-Manifest prüfen |
-| `--dry-run` | zeigt nur an, was gesammelt würde |
+| `--no-hardlinks` | real copies — needed if you want to pass the selection on |
+| `--keep-structure` | preserve the export's directory layout |
+| `--verify` | check each file's SHA-256 against the manifest |
+| `--dry-run` | show only what would be gathered |
 
-#### Warum das nicht der Browser macht
+#### Why the browser cannot do this
 
-Ein „Als ZIP herunterladen"-Knopf ist auf einer `file://`-Seite **nicht
-möglich**. Am echten Export gemessen:
+A "download as ZIP" button is **impossible** on a `file://` page. Measured
+against the real export:
 
 ```
-fetch:            BLOCKIERT (TypeError: Failed to fetch)
-XMLHttpRequest:   BLOCKIERT
-<img> anzeigen:   OK
-canvas auslesen:  BLOCKIERT (SecurityError — tainted canvas)
+fetch:            BLOCKED (TypeError: Failed to fetch)
+XMLHttpRequest:   BLOCKED
+<img> display:    OK
+canvas readback:  BLOCKED (SecurityError — tainted canvas)
 ```
 
-JavaScript darf lokale Dateien **anzeigen**, ihre Bytes aber nicht lesen — es
-ist dieselbe Same-Origin-Regel, die auch das Einbetten des Index nötig macht.
-Ein Knopf, der einen Download verspricht und nichts liefert, wäre schlechter
-als kein Knopf. Deshalb wählt das UI aus und die CLI sammelt ein.
+JavaScript may *display* local files but not *read* their bytes — the same
+same-origin rule that forces the index to be embedded. A button promising a
+download and delivering nothing would be worse than no button. So the UI
+selects and the CLI gathers.
 
-Standardmäßig entstehen **Hardlinks**: eine Sammlung von 937 MB belegt keinen
-zusätzlichen Speicher, weil sie auf dieselben Daten zeigt wie der Export. Zum
-Weitergeben `--no-hardlinks` verwenden oder die Sammlung anschließend packen.
-
-### Prüfen
+### Verify
 
 ```bash
 msgx verify --manifest "~/messenger-extract/export/threema"
 ```
 
-Prüft Vorhandensein, Größe und SHA-256 jeder exportierten Datei sowie die
-Hardlinks. Das Backup wird dafür **nicht** gebraucht — die Prüfung läuft auch
-auf einer Kopie des Exports, Jahre später, auf einem anderen Rechner.
+Checks existence, size and SHA-256 of every exported file, plus the hardlinks.
+The backup is **not** required, so this also works on a copy of the export,
+years later, on another machine.
 
-### Datenbankschemata ansehen
+### Inspect database schemas
 
 ```bash
 msgx database --backup "~/messenger-extract/backup/<UDID>"
 ```
 
-Gibt Tabellen, Spalten, Typen, Primär- und Fremdschlüssel der gefundenen
-App-Datenbanken aus — **keine Inhalte**.
+Prints tables, columns, types, primary and foreign keys of the app databases —
+**no contents**.
 
-## Verschlüsselte Backups
+---
 
-Der primäre Anwendungsfall. Das Programm
+## Encrypted backups
 
-1. liest den Keybag aus `Manifest.plist`,
-2. leitet daraus mit dem Passwort den Passcode-Key ab
-   (PBKDF2, ab Keybag-Version 3 doppelt: SHA-1 dann SHA-256),
-3. entpackt die Klassenschlüssel per AES-Key-Wrap (RFC 3394),
-4. entschlüsselt `Manifest.db` mit AES-256-CBC in ein temporäres Verzeichnis
-   **außerhalb** des Backups,
-5. entschlüsselt Nutzdateien bei Bedarf — für die Typerkennung nur deren Anfang.
+The primary case. The tool
 
-### Welches Passwort?
+1. reads the keybag from `Manifest.plist`,
+2. derives the passcode key with PBKDF2 (double, SHA-1 then SHA-256, from
+   keybag version 3 on),
+3. unwraps the class keys with AES Key Wrap (RFC 3394),
+4. decrypts `Manifest.db` with AES-256-CBC into a temporary directory
+   **outside** the backup,
+5. decrypts payload files on demand — for type detection only their first
+   bytes.
 
-Das Passwort, das im Finder beim Aktivieren von „iPhone-Backup verschlüsseln"
-gesetzt wurde. **Nicht** der Gerätecode des iPhones und **nicht** das
-Apple-ID-Passwort. Ein falsches Passwort scheitert an der Integritätsprüfung
-des AES-Key-Wrap und wird als solches gemeldet — es entsteht kein Datenmüll.
+### Which password?
 
-### Wie das Passwort abgefragt wird
+The one you set in the Finder when you enabled "Encrypt local backup". **Not**
+your iPhone passcode and **not** your Apple ID password. A wrong password fails
+the AES Key Wrap integrity check and is reported as such; no garbage is
+produced.
 
-Ausschließlich interaktiv über `getpass.getpass()`:
+### How it is asked for
 
-```text
-Passwort des verschluesselten Backups:
-```
+Interactively via `getpass.getpass()` only. There is **no** command-line
+option, **no** environment variable and **no** config file — a password in
+`argv` ends up in shell history and the process list. A test introspects every
+subcommand to prove no such option exists.
 
-Es gibt **kein** Kommandozeilenargument, **keine** Umgebungsvariable und
-**keine** Konfigurationsdatei dafür — ein Passwort in `argv` landet in der
-Shell-History und in der Prozessliste. Ein Test prüft per Introspektion aller
-Unterbefehle, dass keine solche Option existiert.
+An honest limit: CPython cannot guarantee secure erasure of immutable `str` and
+`bytes`. Derived keys live in an overwritable buffer that is zeroed after use;
+the password itself may linger in the heap until the process ends. That narrows
+the window, it does not close it.
 
-Grenze, die offen benannt sein soll: CPython garantiert für unveränderliche
-`str`/`bytes` kein sicheres Löschen. Abgeleitete Schlüssel liegen in einem
-überschreibbaren Puffer und werden nach Gebrauch genullt; das eingegebene
-Passwort selbst kann als String-Objekt im Heap verbleiben, bis der Prozess
-endet. Das verkleinert das Zeitfenster, beseitigt es aber nicht.
+`--metadata-only` produces a **partial report** from the unencrypted plists:
+device, iOS version, encryption state and the detected messengers. File and
+media statistics are missing and are reported as missing, not as zero.
 
-### Ohne Passwort
-
-`--metadata-only` erzeugt einen **Teilbericht** aus `Info.plist` und
-`Manifest.plist`. Darin stehen Gerät, iOS-Version, Verschlüsselungszustand und
-die erkannten Messenger samt Version — Datei- und Medienstatistiken fehlen und
-werden ausdrücklich als fehlend ausgewiesen, nicht als Null dargestellt.
+---
 
 ## Dependencies
 
-| Paket | Version | Lizenz | Zweck |
+| Package | Version | License | Purpose |
 |---|---|---|---|
-| [`cryptography`](https://github.com/pyca/cryptography) | >=42,<46 | Apache-2.0 OR BSD-3-Clause | PBKDF2, AES-256-CBC, AES-Key-Wrap (RFC 3394) |
-| `cffi` (transitiv) | — | MIT-0 | Bindings für `cryptography` |
-| `pycparser` (transitiv) | — | BSD-3-Clause | Abhängigkeit von `cffi` |
-| `pytest`, `pytest-cov` (nur dev) | — | MIT | Tests |
+| [`cryptography`](https://github.com/pyca/cryptography) | >=42,<46 | Apache-2.0 OR BSD-3-Clause | PBKDF2, AES-256-CBC, AES Key Wrap (RFC 3394) |
+| `cffi` (transitive) | — | MIT-0 | bindings for `cryptography` |
+| `pycparser` (transitive) | — | BSD-3-Clause | dependency of `cffi` |
+| `pytest`, `pytest-cov`, `ruff` (dev only) | — | MIT | tests and linting |
 
-Alles Übrige kommt aus der Python-Standardbibliothek. Es wird **keine eigene
-Kryptografie** implementiert: alle kryptografischen Primitive stammen aus
-`cryptography`. Eigener Code beschränkt sich auf Formatparsing (TLV-Keybag,
-NSKeyedArchiver-Plist).
+Everything else is the Python standard library. **No cryptographic primitive is
+implemented here** — own code is limited to format parsing (TLV keybag,
+NSKeyedArchiver plists, JPEG/PNG/GIF/WEBP headers).
 
-Zur Laufzeit wird nichts nachgeladen.
+Nothing is downloaded at runtime.
+
+---
 
 ## Tests
 
 ```bash
 ~/.venvs/msgbackup-extractor/bin/python -m pytest
-```
-
-Die Tests benötigen **niemals** echte private Daten. Alle Backups werden
-synthetisch erzeugt (`tests/support/backup_builder.py`) — mit echtem TLV-Keybag,
-echter PBKDF2-Ableitung, echtem AES-Key-Wrap, echter AES-256-CBC-Verschlüsselung
-und echten NSKeyedArchiver-MBFile-Blobs, damit sie den Produktionscode
-tatsächlich auf die Probe stellen und nicht nur zu einem vereinfachten
-Testformat passen.
-
-Besonders erwähnenswert sind drei Tests:
-
-- `test_readonly_guarantee.py` nimmt einen vollständigen Fingerabdruck des
-  Backups (Inhalt, Größe, mtime jeder Datei), führt alle lesenden Operationen
-  aus und vergleicht erneut. Gegenproben belegen, dass der Fingerabdruck
-  Veränderungen wirklich erkennt.
-- `test_no_network.py` prüft statisch, dass keine Quelldatei ein Netzwerkmodul
-  importiert, und dynamisch, dass sich das gesamte Paket mit gesperrtem `socket`
-  importieren lässt.
-- `test_analysis.py::test_encrypted_and_plain_reports_agree` analysiert dasselbe
-  Backup einmal verschlüsselt und einmal unverschlüsselt und vergleicht die
-  Berichte. Das ist der scharfe Test für die Entschlüsselung.
-
-Linting:
-
-```bash
 ~/.venvs/msgbackup-extractor/bin/ruff check src tests
 ```
 
+704 tests. They **never** need real private data: every backup is generated
+synthetically with a real TLV keybag, real PBKDF2, real AES Key Wrap, real
+AES-256-CBC and real NSKeyedArchiver MBFile blobs, so they actually exercise
+the production code instead of matching a simplified test format.
+
+Four worth naming:
+
+- `test_readonly_guarantee.py` fingerprints the whole backup, runs everything,
+  and compares again. Counter-tests prove the fingerprint detects changes.
+- `test_no_network.py` checks statically that no source file imports a network
+  module, and dynamically that the whole package imports with `socket`
+  disabled.
+- `test_analysis.py::test_encrypted_and_plain_reports_agree` analyses the same
+  backup encrypted and unencrypted and compares the reports.
+- `test_platforms.py` fakes the operating system so the Windows paths are
+  checked rather than claimed.
+
+Before pushing, a second gate runs:
+
+```bash
+scripts/check-sensitive.sh
+```
+
+It scans the working tree **and the whole commit history** for personal data,
+machine-specific paths, device identifiers and leftovers from a history
+rewrite, and exits non-zero on a hit. Known-harmless matches — synthetic
+fixture data — are listed with a reason in
+`scripts/sensitive-allowlist.txt`, rather than by weakening a pattern.
+
+---
+
 ## Troubleshooting
 
-**`Kein Leserecht auf …` / `PermissionError` (macOS)**
-Das Terminal braucht „Festplattenvollzugriff": Systemeinstellungen →
-Datenschutz & Sicherheit → Festplattenvollzugriff → Terminal hinzufügen und
-Terminal **neu starten**. Der Neustart ist nötig; die Änderung greift nicht im
-laufenden Prozess.
+**`Kein Leserecht auf …` / `PermissionError` (macOS)** — the terminal needs Full
+Disk Access, and you must **restart** it afterwards.
 
-**`Keine Backups gefunden` (Windows)**
-Die Meldung nennt die durchsuchten Pfade samt Zustand. Häufige Ursachen: das
-Backup liegt in iCloud statt lokal (dann gibt es keine Dateien zu lesen), oder
-es wurde auf ein anderes Laufwerk verschoben. Mit dem vollen Pfad geht es
-trotzdem:
-`msgx analyze --backup "C:\Users\DU\Apple\MobileSync\Backup\<UDID>"`
+**`Keine Backups gefunden` (Windows)** — the message names the searched paths
+and their state. Common causes: the backup is in iCloud rather than local, or it
+was moved to another drive. The full path via `--backup` still works.
 
-**`pbpaste: command not found` (Windows)**
-Das ist ein macOS-Befehl. Der Übergabedialog in der Ansicht nennt den für dein
-System richtigen; unter Windows lautet er
+**`Das Passwort ist falsch`** — it is the Finder backup password, not the device
+passcode and not the Apple ID password.
+
+**`… sieht nicht wie ein Apple-Backup aus`** — `--backup` must point at the
+directory named after the device ID, not at `MobileSync/Backup` itself. `msgx
+backups` lists the candidates.
+
+**`Diagnosebericht: keine Dateitabelle gefunden`** — the backup has a structure
+this tool does not know. It stops deliberately instead of guessing; the report
+lists the tables and columns actually present and is the useful basis for a bug
+report.
+
+**`import msgbackup_extractor` fails** — is the venv inside iCloud Drive? See
+[Installation](#macos).
+
+**`pbpaste: command not found` (Windows)** — that is a macOS command; use
 `powershell -Command Get-Clipboard`.
 
-**`Das Passwort ist falsch`**
-Es ist das im Finder gesetzte Backup-Passwort, nicht der Gerätecode und nicht
-das Apple-ID-Passwort.
+---
 
-**`… sieht nicht wie ein Apple-Backup aus`**
-`--backup` muss auf das Verzeichnis mit der Geräte-ID zeigen, nicht auf
-`MobileSync/Backup` selbst. `msgx backups` listet die Kandidaten.
+## Known limitations
 
-**`Diagnosebericht: In der Manifest.db wurde keine Dateitabelle gefunden`**
-Das Backup hat eine Struktur, die das Programm nicht kennt. Es bricht dann
-bewusst ab, statt zu raten. Der Diagnosebericht listet die tatsächlich
-vorhandenen Tabellen und Spalten — er ist die nützliche Grundlage für eine
-Fehlermeldung.
+1. Only data actually **present** in the backup can be extracted. Apps may
+   exclude files — Signal excludes everything.
+2. Protection classes tied to the device key alone cannot be opened from a
+   backup. Affected files are counted as undecryptable, not silently skipped.
+3. A manifest entry with an unreadable MBFile blob has no file key. In an
+   encrypted backup its content is therefore ciphertext and its type cannot be
+   determined; it is reported as undecryptable rather than typed from ciphertext.
+4. A file truncated in the backup whose length happens to be a multiple of 16
+   bytes decrypts without error — just to less data. The decrypted byte count is
+   therefore always compared against the size recorded in the manifest.
+5. Core Data prefixes every blob with a marker byte (`0x01` inline, `0x02`
+   reference). It is stripped; an unexpected value is reported rather than
+   removed blindly.
+6. For [Anzahl entfernt] WhatsApp entries the backup holds **only** the preview image
+   (median 100 px wide). Those tiles cannot be sharp; the single view says so.
+7. Message texts are not exported. The UI therefore cannot show them.
+8. Secure erasure of the password from the Python heap is not guaranteeable.
+9. The cloud guard recognises the usual locations by path. An arbitrarily
+   configured sync folder is beyond it.
+10. **Windows is implemented but untested.** See
+    [Requirements](#windows-is-untested).
+11. For other systems (Linux, BSD) no default location is known and none is
+    invented. A copied backup still works via `--backup`.
 
-**`import msgbackup_extractor` schlägt fehl**
-Liegt das venv in iCloud Drive? Siehe den Abschnitt oben.
+Messengers may change their internal structure between versions. Structure is
+detected at runtime, but for an unknown structure the tool can only produce a
+diagnostic report.
 
-## Bekannte Einschränkungen
+---
 
-1. Dieses Programm kann nur Daten extrahieren, die tatsächlich im zugänglichen
-   Apple-Backup vorhanden sind. Es garantiert nicht, dass jede historische
-   Messenger-Datei vorhanden oder entschlüsselbar ist. Apps können Dateien vom
-   Backup ausschließen.
-2. Protection Classes, deren Schlüssel nur am Geräteschlüssel hängen, lassen
-   sich aus einem Backup heraus nicht öffnen. Betroffene Dateien werden als
-   „nicht entschlüsselbar" gezählt, nicht stillschweigend übersprungen.
-3. Ein Manifest-Eintrag mit unlesbarem MBFile-Blob hat keinen Dateischlüssel. In
-   einem verschlüsselten Backup ist sein Inhalt damit Chiffrat und sein Typ
-   nicht bestimmbar. Er wird als „nicht entschlüsselbar" ausgewiesen, statt
-   einen Typ aus Chiffrat zu erfinden.
-4. Eine im Backup abgeschnittene Datei, deren Länge zufällig ein Vielfaches von
-   16 Byte ist, entschlüsselt ohne Fehler — nur zu weniger Daten. Deshalb wird
-   die entschlüsselte Byteanzahl immer gegen die im Manifest vermerkte Größe
-   geprüft und eine Abweichung gemeldet.
-5. Core Data stellt jedem Blob ein Markierungsbyte voran (`0x01` für Inline-
-   Daten, `0x02` für eine Referenz auf `_EXTERNAL_DATA`). Es wird abgeschnitten;
-   ein unerwarteter Wert wird gemeldet statt blind entfernt. Beginnt ein Blob
-   nicht mit `0x01`, kann die betroffene Datei um ein Byte verschoben sein — das
-   steht dann als Hinweis im Bericht.
-6. Threema kann Teile seiner Daten zusätzlich app-eigen verschlüsseln. Ob und
-   wie weit das eine Rolle spielt, ist erst nach der Analyse eines echten
-   Backups beurteilbar und wird dann hier dokumentiert — nicht vorab versprochen.
-7. Threema kann seine interne Struktur zwischen Versionen ändern. Das Programm
-   erkennt Strukturen dynamisch, kann bei unbekannten Strukturen aber nur einen
-   Diagnosebericht liefern statt Ergebnisse.
-8. Sicheres Löschen des Passworts aus dem Python-Heap ist nicht garantierbar
-   (siehe oben).
-9. Der Cloud-Sync-Guard erkennt die üblichen Ablagen anhand des Pfads. Einen
-   beliebig konfigurierten Sync-Ordner kann er nicht kennen.
-10. **Windows ist implementiert, aber nicht erprobt.** Entwickelt und an einem
-    echten Backup geprüft wurde ausschließlich macOS. Die Windows-Pfade stammen
-    aus Apples Dokumentation, nicht aus einem Testlauf. Tests täuschen das
-    Betriebssystem vor und prüfen die Pfadwahl; ob Apple die Backups dort
-    tatsächlich ablegt, können sie nicht bestätigen.
-11. Für andere Systeme (Linux, BSD) ist kein Standardort bekannt und es wird
-    keiner erfunden. Ein kopiertes oder mit libimobiledevice erzeugtes Backup
-    lässt sich über `--backup` trotzdem verarbeiten.
+## Intended use
 
-Weitere Details: §17 des Design-Dokuments.
+This tool is for **your own** backup on **your own** machine.
 
-## Lizenz
+Backups contain messages exchanged with other people. Under the GDPR, purely
+private use falls under the household exemption (Art. 2(2)(c)); publishing or
+passing on extracted data does not.
 
-MIT — siehe [LICENSE](LICENSE).
+Running it against another person's backup without authorisation may be a
+criminal offence — in Germany, for example, under section 202a StGB. Do not do
+that.
+
+Threema, WhatsApp and Signal are trademarks of their respective owners, named
+here only to describe which formats can be read. This project is not affiliated
+with, endorsed by, or sponsored by any of them. See [`NOTICE`](NOTICE).
+
+---
+
+## License
+
+[Apache License 2.0](LICENSE). Copyright 2026 Markus Mueller.
+
+Apache-2.0 rather than MIT for two reasons that matter here: it carries an
+explicit warranty disclaimer and limitation of liability, and it requires
+modified files to be marked as changed. If someone forks this and removes the
+read-only guards or the integrity checks, that obligation makes the change
+visible.

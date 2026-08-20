@@ -1,0 +1,45 @@
+msgbackup-extractor
+Copyright 2026 Markus Mueller
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+--------------------------------------------------------------------------------
+Intended use
+--------------------------------------------------------------------------------
+
+This software reads a local Apple iPhone backup that belongs to the person
+running it. Backups contain messages exchanged with other people. Under the
+GDPR, purely private use falls under the household exemption (Art. 2(2)(c));
+publishing or passing on extracted data does not.
+
+Running this software against another person's backup without authorisation may
+be a criminal offence, for example under section 202a of the German Criminal
+Code (Ausspaehen von Daten). Do not do that.
+
+--------------------------------------------------------------------------------
+Trademarks
+--------------------------------------------------------------------------------
+
+Threema, WhatsApp and Signal are trademarks of their respective owners. They are
+named here only to describe which data formats this software can read, as
+permitted by Apache License 2.0 section 6. This project is not affiliated with,
+endorsed by, or sponsored by any of them. No logos or other brand assets are
+included.
+
+Apple, iPhone, iTunes, macOS and Finder are trademarks of Apple Inc.
+
+--------------------------------------------------------------------------------
+Third-party dependencies
+--------------------------------------------------------------------------------
+
+Runtime:
+  cryptography (PyCA)  -  Apache-2.0 OR BSD-3-Clause
+    https://github.com/pyca/cryptography
+    Transitively: cffi (MIT-0), pycparser (BSD-3-Clause)
+
+Development only:
+  pytest, pytest-cov  -  MIT
+  ruff                -  MIT
+
+No cryptographic primitive is implemented in this project. PBKDF2, AES-CBC and
+AES Key Wrap (RFC 3394) all come from cryptography.

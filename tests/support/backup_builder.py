@@ -385,7 +385,7 @@ def build_backup(
     destination: Path,
     files: list[BackupFile],
     *,
-    udid: str = "00008030-001A2B3C4D5E6F70",
+    udid: str = "00008030-001A2B3C4D5E6F70",  # invented, no real device
     password: str | None = None,
     installed_applications: list[str] | None = None,
     application_versions: dict[str, str] | None = None,
