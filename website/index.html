@@ -195,10 +195,11 @@
     </div>
     <div>
       <svg viewBox="0 0 32 32" aria-hidden="true" fill="var(--ink)"><rect x="2" y="4" width="28" height="24" /><path d="M7 12 L12 16 L7 20" stroke="var(--paper)" stroke-width="2.5" fill="none" /><rect x="15" y="18" width="10" height="2.5" fill="var(--paper)" /></svg>
-      <h3>A terminal</h3>
-      <p class="hint">To be blunt: this is a command-line tool and Python 3.12. If
-      typing three commands into a terminal is not for you, this is not for you
-      either.</p>
+      <h3>A terminal, once</h3>
+      <p class="hint">Three terminal commands if you live there — or build the app
+      once and never type again. Python 3.12 either way. To be blunt: nobody gets
+      around that one installation, and if it is already too much, this is not
+      for you.</p>
     </div>
     <div>
       <svg viewBox="0 0 32 32" aria-hidden="true" fill="var(--ink)"><path d="M3 6h26v7H3z" /><path d="M3 14.5h26v7H3z" /><path d="M3 23h26v7H3z" /><circle cx="25" cy="9.5" r="1.6" fill="var(--paper)" /><circle cx="25" cy="18" r="1.6" fill="var(--paper)" /><circle cx="25" cy="26.5" r="1.6" fill="var(--paper)" /></svg>
@@ -216,62 +217,88 @@
 
   <div class="grid grid--wide-left">
     <div class="panel">
+      <p class="label label--spaced">For everyone — three steps</p>
       <div class="step">
         <span class="step__no">1</span>
         <div>
-          <h3>Look before you touch</h3>
-          <p class="hint">Reports which messengers are in the backup and what is inside. Writes nothing at all.</p>
-          <div class="cmdbar">msgx analyze <span>--backup</span> ~/…/Backup/&lt;device&gt;</div>
+          <h3>Install, once</h3>
+          <p class="hint">Three lines in a terminal. The only time you have to
+          type anything.</p>
+          <div class="cmdbar">git clone https://github.com/abnun/msgbackup-extractor.git
+python3 -m venv ~/.venvs/msgx
+~/.venvs/msgx/bin/pip install -e .</div>
         </div>
       </div>
       <div class="step">
         <span class="step__no">2</span>
         <div>
-          <h3>Rehearse, then run</h3>
-          <p class="hint">With <code>--dry-run</code> it shows what would happen
-          and writes nothing. The same plan drives the real run, so the rehearsal
-          cannot behave differently from the real thing.</p>
-          <div class="cmdbar">msgx extract <span>--backup</span> … <span>--output</span> ~/export/threema</div>
+          <h3>Build the app</h3>
+          <p class="hint">One command, and
+          <code>msgbackup-extractor.app</code> appears in your Applications — on
+          Windows a <code>.cmd</code> on the desktop.</p>
+          <div class="cmdbar">scripts/build-app.py</div>
         </div>
       </div>
       <div class="step">
         <span class="step__no">3</span>
         <div>
-          <h3>Look through it</h3>
-          <p class="hint">Builds the page. You open it with a double-click. Selecting happens there, copying happens with <code>msgx collect</code> — a page opened from disk may display your files but not read them.</p>
-          <div class="cmdbar">msgx ui <span>--output</span> ~/export</div>
+          <h3>Double-click it</h3>
+          <p class="hint">It opens a terminal and asks one thing at a time: which
+          backup, which messenger, where to. Every step prints the command it
+          runs — use it twice and you can leave it behind. At the end the
+          browsable page opens.</p>
         </div>
       </div>
     </div>
     <div class="panel panel--ink">
-      <p class="label label--spaced">Installation</p>
-      <p class="hint">Three lines, and one trap worth knowing about.</p>
-      <div class="cmdbar cmdbar--invert">git clone https://github.com/abnun/msgbackup-extractor.git
-python3 -m venv ~/.venvs/msgx
-~/.venvs/msgx/bin/pip install -e .</div>
-      <p class="hint">The terminal needs Full Disk Access, and it must be
-      restarted afterwards, or it cannot read the backup at all.</p>
-      <p class="hint"><strong>Do not put the virtual environment inside iCloud Drive.</strong> iCloud hides the <code>.pth</code> files, Python then skips
+      <p class="label label--spaced">Two traps</p>
+      <p class="hint">The terminal needs <strong>Full Disk Access</strong>, and it
+      must be restarted afterwards — otherwise it cannot read the backup at
+      all.</p>
+      <p class="hint"><strong>Do not put the virtual environment inside iCloud
+      Drive.</strong> iCloud hides the <code>.pth</code> files, Python then skips
       them silently, and the install looks like it worked when it did not. The
       handbook shows how to check.</p>
+      <p class="hint">Why the app opens a terminal rather than being a silent
+      window: an encrypted backup needs a password, and the password is only ever
+      typed in, never passed along.</p>
       <p class="panel__cta"><a class="btn btn--out btn--on-ink" href="https://github.com/abnun/msgbackup-extractor#installation" target="_blank" rel="noopener noreferrer">Full instructions</a></p>
     </div>
   </div>
 
-    <div class="panel panel--ink panel--wide">
-    <p class="label label--tight">Rather not type?</p>
-    <p class="lede lede--flush">One command builds a double-clickable app that
-    does all of the above for you, asking one question at a time.</p>
-    <div class="cmdbar cmdbar--invert cmdbar--roomy">scripts/build-app.py</div>
-    <p class="hint">It is built on your machine from what macOS already has —
-    nothing downloaded, no framework installed. <strong>It opens a Terminal, and
-    that is deliberate:</strong> an encrypted backup needs a password, and the
-    password is only ever typed in, never passed along. So it is a launcher, not
-    a second program — and every step prints the command it runs, which means it
-    teaches you the tool instead of hiding it.</p>
-    <p class="hint">On Windows the same command writes a double-clickable
-    <code>.cmd</code> instead. Like the rest of the Windows support, it has never
-    been run there.</p>
+  <div class="panel panel--wide">
+    <p class="label label--tight">For the command line — the individual commands</p>
+    <p class="hint">Exactly what the app runs for you. If you know your way
+    around a terminal, you do not need the app.</p>
+    <div class="step">
+      <span class="step__no">1</span>
+      <div>
+        <h3>Look before you touch</h3>
+        <p class="hint">Reports which messengers are in the backup and what is
+        inside. Writes nothing at all.</p>
+        <div class="cmdbar">msgx analyze <span>--backup</span> ~/…/Backup/&lt;device&gt;</div>
+      </div>
+    </div>
+    <div class="step">
+      <span class="step__no">2</span>
+      <div>
+        <h3>Rehearse, then run</h3>
+        <p class="hint">With <code>--dry-run</code> it shows what would happen and
+        writes nothing. The same plan drives the real run, so the rehearsal
+        cannot behave differently from the real thing.</p>
+        <div class="cmdbar">msgx extract <span>--backup</span> … <span>--output</span> ~/export/threema</div>
+      </div>
+    </div>
+    <div class="step">
+      <span class="step__no">3</span>
+      <div>
+        <h3>Look through it</h3>
+        <p class="hint">Builds the page. You open it with a double-click, select
+        there, and copy either straight in the browser or with
+        <code>msgx collect</code>.</p>
+        <div class="cmdbar">msgx ui <span>--output</span> ~/export</div>
+      </div>
+    </div>
   </div>
 
 <div class="head" id="check">
@@ -328,7 +355,7 @@ python3 -m venv ~/.venvs/msgx
   <nav>
     <a href="https://github.com/abnun/msgbackup-extractor" target="_blank" rel="noopener noreferrer">Source on GitHub</a>
     <a href="https://github.com/abnun/msgbackup-extractor#readme" target="_blank" rel="noopener noreferrer">Handbook</a>
-    <a href="de/" hreflang="de" lang="de">Deutsch</a>
+    <a href="de/" hreflang="de" lang="de">Deutsche Version</a>
     <a href="impressum.html">Impressum</a>
     <a href="datenschutz.html">Datenschutz</a>
   </nav>

@@ -178,9 +178,11 @@
     </div>
     <div>
       <svg viewBox="0 0 32 32" aria-hidden="true" fill="var(--ink)"><rect x="2" y="4" width="28" height="24" /><path d="M7 12 L12 16 L7 20" stroke="var(--paper)" stroke-width="2.5" fill="none" /><rect x="15" y="18" width="10" height="2.5" fill="var(--paper)" /></svg>
-      <h3>Ein Terminal</h3>
-      <p class="hint">Ganz offen: das ist ein Kommandozeilenwerkzeug und Python 3.12. Wenn drei Befehle in einem Terminal nichts für dich sind, ist das
-      hier auch nichts für dich.</p>
+      <h3>Ein Terminal — einmal</h3>
+      <p class="hint">Drei Terminal-Befehle für die Profis — oder einmal die App
+      bauen und danach nur noch doppelklicken. Python 3.12 braucht es in beiden
+      Fällen. Ganz offen: um diese eine Installation kommt niemand herum, und
+      wenn dir schon die zu viel ist, ist das hier nichts für dich.</p>
     </div>
     <div>
       <svg viewBox="0 0 32 32" aria-hidden="true" fill="var(--ink)"><path d="M3 6h26v7H3z" /><path d="M3 14.5h26v7H3z" /><path d="M3 23h26v7H3z" /><circle cx="25" cy="9.5" r="1.6" fill="var(--paper)" /><circle cx="25" cy="18" r="1.6" fill="var(--paper)" /><circle cx="25" cy="26.5" r="1.6" fill="var(--paper)" /></svg>
@@ -198,64 +200,88 @@
 
   <div class="grid grid--wide-left">
     <div class="panel">
+      <p class="label label--spaced">Für alle — drei Schritte</p>
       <div class="step">
         <span class="step__no">1</span>
         <div>
-          <h3>Erst schauen, nicht anfassen</h3>
-          <p class="hint">Zeigt, welche Messenger im Backup stecken und was darin liegt. Schreibt überhaupt nichts.</p>
-          <div class="cmdbar">msgx analyze <span>--backup</span> ~/…/Backup/&lt;Gerät&gt;</div>
+          <h3>Einmal installieren</h3>
+          <p class="hint">Drei Zeilen im Terminal. Das einzige Mal, dass du
+          etwas tippen musst.</p>
+          <div class="cmdbar">git clone https://github.com/abnun/msgbackup-extractor.git
+python3 -m venv ~/.venvs/msgx
+~/.venvs/msgx/bin/pip install -e .</div>
         </div>
       </div>
       <div class="step">
         <span class="step__no">2</span>
         <div>
-          <h3>Erst proben, dann ernst machen</h3>
-          <p class="hint">Mit <code>--dry-run</code> zeigt es, was passieren
-          würde, und schreibt nichts. Denselben Plan führt der echte Lauf aus,
-          die Probe kann sich also nicht anders verhalten als der Ernstfall.</p>
-          <div class="cmdbar">msgx extract <span>--backup</span> … <span>--output</span> ~/export/threema</div>
+          <h3>Die App bauen</h3>
+          <p class="hint">Ein Befehl, und es entsteht
+          <code>msgbackup-extractor.app</code> in deinen Programmen — unter
+          Windows eine <code>.cmd</code> auf dem Desktop.</p>
+          <div class="cmdbar">scripts/build-app.py</div>
         </div>
       </div>
       <div class="step">
         <span class="step__no">3</span>
         <div>
-          <h3>Durchsehen</h3>
-          <p class="hint">Erzeugt die Seite. Du öffnest sie per Doppelklick. Ausgewählt wird dort, kopiert wird mit <code>msgx collect</code> — eine lokal geöffnete Seite darf deine Dateien anzeigen, aber nicht auslesen.</p>
-          <div class="cmdbar">msgx ui <span>--output</span> ~/export</div>
+          <h3>Doppelklicken</h3>
+          <p class="hint">Die App öffnet ein Terminal und fragt der Reihe nach:
+          welches Backup, welcher Messenger, wohin. Sie zeigt bei jedem Schritt
+          den Befehl, den sie ausführt — wer sie zweimal benutzt hat, kann sie
+          weglassen. Am Ende öffnet sich die Ansicht zum Durchsehen.</p>
         </div>
       </div>
     </div>
     <div class="panel panel--ink">
-      <p class="label label--spaced">Installation</p>
-      <p class="hint">Drei Zeilen, und eine Falle, die man kennen sollte.</p>
-      <div class="cmdbar cmdbar--invert">git clone https://github.com/abnun/msgbackup-extractor.git
-python3 -m venv ~/.venvs/msgx
-~/.venvs/msgx/bin/pip install -e .</div>
-      <p class="hint">Das Terminal braucht Festplattenvollzugriff, und es muss
-      danach neu gestartet werden, sonst kann es das Backup gar nicht lesen.</p>
-      <p class="hint"><strong>Lege die virtuelle Umgebung nicht in iCloud Drive.</strong>
-      iCloud versteckt die <code>.pth</code>-Dateien, Python überspringt sie
-      dann stillschweigend, und die Installation sieht gelungen aus, ist es aber nicht. Das Handbuch zeigt, wie man das
-      prüft.</p>
+      <p class="label label--spaced">Zwei Fallen</p>
+      <p class="hint">Das Terminal braucht <strong>Festplattenvollzugriff</strong>,
+      und es muss danach neu gestartet werden — sonst kann es das Backup gar
+      nicht lesen.</p>
+      <p class="hint"><strong>Lege die virtuelle Umgebung nicht in iCloud
+      Drive.</strong> iCloud versteckt die <code>.pth</code>-Dateien, Python
+      überspringt sie dann stillschweigend, und die Installation sieht gelungen
+      aus, ist es aber nicht. Das Handbuch zeigt, wie man das prüft.</p>
+      <p class="hint">Warum die App ein Terminal öffnet und keine stille
+      Oberfläche ist: ein verschlüsseltes Backup braucht ein Passwort, und das
+      wird ausschließlich eingetippt, nie weitergegeben.</p>
       <p class="panel__cta"><a class="btn btn--out btn--on-ink" href="https://github.com/abnun/msgbackup-extractor/blob/main/README.de.md#installation" target="_blank" rel="noopener noreferrer">Vollständige Anleitung</a></p>
     </div>
   </div>
 
-    <div class="panel panel--ink panel--wide">
-    <p class="label label--tight">Lieber nicht tippen?</p>
-    <p class="lede lede--flush">Ein Befehl baut eine App zum Doppelklicken, die
-    all das oben für dich macht und dabei eine Frage nach der anderen stellt.</p>
-    <div class="cmdbar cmdbar--invert cmdbar--roomy">scripts/build-app.py</div>
-    <p class="hint">Sie wird auf deinem Rechner aus Bordmitteln gebaut — nichts
-    heruntergeladen, kein Framework installiert. <strong>Sie öffnet ein Terminal,
-    und das ist Absicht:</strong> ein verschlüsseltes Backup braucht ein
-    Passwort, und das wird ausschließlich eingetippt, nie weitergegeben. Sie ist
-    also ein Starter und kein zweites Programm — und jeder Schritt zeigt den
-    Befehl, den er ausführt, bringt dir das Werkzeug also bei statt es zu
-    verstecken.</p>
-    <p class="hint">Unter Windows schreibt derselbe Befehl eine doppelklickbare
-    <code>.cmd</code>. Wie die Windows-Unterstützung insgesamt ist sie dort nie
-    gelaufen.</p>
+  <div class="panel panel--wide">
+    <p class="label label--tight">Für Fortgeschrittene — die einzelnen Befehle</p>
+    <p class="hint">Genau das, was die App für dich ausführt. Wer die
+    Kommandozeile kennt, braucht die App nicht.</p>
+    <div class="step">
+      <span class="step__no">1</span>
+      <div>
+        <h3>Erst schauen, nicht anfassen</h3>
+        <p class="hint">Zeigt, welche Messenger im Backup stecken und was darin
+        liegt. Schreibt überhaupt nichts.</p>
+        <div class="cmdbar">msgx analyze <span>--backup</span> ~/…/Backup/&lt;Gerät&gt;</div>
+      </div>
+    </div>
+    <div class="step">
+      <span class="step__no">2</span>
+      <div>
+        <h3>Erst proben, dann ernst machen</h3>
+        <p class="hint">Mit <code>--dry-run</code> zeigt es, was passieren würde,
+        und schreibt nichts. Denselben Plan führt der echte Lauf aus, die Probe
+        kann sich also nicht anders verhalten als der Ernstfall.</p>
+        <div class="cmdbar">msgx extract <span>--backup</span> … <span>--output</span> ~/export/threema</div>
+      </div>
+    </div>
+    <div class="step">
+      <span class="step__no">3</span>
+      <div>
+        <h3>Durchsehen</h3>
+        <p class="hint">Erzeugt die Seite. Du öffnest sie per Doppelklick,
+        wählst dort aus und kopierst entweder direkt im Browser oder mit
+        <code>msgx collect</code>.</p>
+        <div class="cmdbar">msgx ui <span>--output</span> ~/export</div>
+      </div>
+    </div>
   </div>
 
 <div class="head" id="check">
@@ -315,7 +341,7 @@ python3 -m venv ~/.venvs/msgx
   <nav>
     <a href="https://github.com/abnun/msgbackup-extractor" target="_blank" rel="noopener noreferrer">Quellcode auf GitHub</a>
     <a href="https://github.com/abnun/msgbackup-extractor/blob/main/README.de.md" target="_blank" rel="noopener noreferrer">Handbuch</a>
-    <a href="../" hreflang="en" lang="en">English</a>
+    <a href="../" hreflang="en" lang="en">English Version</a>
     <a href="../impressum.html">Impressum</a>
     <a href="../datenschutz.html">Datenschutz</a>
   </nav>
