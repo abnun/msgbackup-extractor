@@ -522,7 +522,10 @@ pbpaste | msgx collect \
 ```
 
 Was auch immer es ist: der Dialog zeigt **jeden** Befehl, den du ausführen
-musst, nummeriert.
+musst, nummeriert, zugeklappt und mit eigenem Kopierknopf. Der **Zielordner ist
+ein Feld im Dialog** — änderst du ihn, ändern sich die Befehle mit, korrekt für
+die Shell gequotet. Einen Ordner-Auswahldialog gibt es nicht und kann es nicht
+geben: ein Browser gibt den *Namen* des Ordners heraus, nie seinen Pfad.
 
 Unter Windows lautet der Befehl für die Zwischenablage
 `powershell -Command Get-Clipboard`; der Dialog nennt den passenden für das

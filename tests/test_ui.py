@@ -364,6 +364,26 @@ def test_the_handover_is_always_a_complete_set_of_steps(export_dir: Path) -> Non
     assert "hand.scrollTop = 0" in html
 
 
+def test_the_target_folder_is_editable_and_shell_safe(export_dir: Path) -> None:
+    """Der Zielordner gehoert in ein Feld, nicht in den Text.
+
+    Einen Ordner-Auswahldialog kann es nicht geben: der Browser gibt aus
+    Datenschutzgruenden nur den Ordnernamen heraus, nicht den Pfad
+    (`showDirectoryPicker` liefert einen Handle ohne Pfadfeld, gemessen). Also
+    ein Eingabefeld - und dann muss der Wert shell-sicher in den Befehl.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert 'id="hand-target-input"' in html
+    assert "function pfadFuerShell(" in html
+    # Die Tilde darf NICHT gequotet werden, sonst expandiert sie nicht und der
+    # Ordner heisst wirklich "~".
+    assert '"~/" + shellQuote(pfad.slice(2))' in html
+    assert "~-]+$/.test(pfad)" in html
+    # Der Wert wird gemerkt, aber ein gesperrter Speicher darf nichts brechen.
+    assert "msgx.target" in html
+    assert "localStorage" in html
+
+
 def test_the_page_knows_the_command_line_budget(export_dir: Path) -> None:
     """Ohne die Grenze koennte die Seite keinen Befehl bauen, der sicher passt."""
     index = _index(export_dir)

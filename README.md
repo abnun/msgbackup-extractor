@@ -507,7 +507,11 @@ pbpaste | msgx collect \
     --selection -
 ```
 
-Whichever it is, the dialog shows **every** command you have to run, numbered.
+Whichever it is, the dialog shows **every** command you have to run, numbered,
+each collapsed with its own copy button. The **target folder is a field in the
+dialog** — change it and the commands change with it, correctly quoted for the
+shell. There is no folder picker, and there cannot be one: a browser hands out
+the folder's *name*, never its path.
 
 On Windows the clipboard command is `powershell -Command Get-Clipboard`; the
 dialog prints the right one for your system. `--selection FILE` also accepts a

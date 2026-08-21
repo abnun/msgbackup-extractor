@@ -1641,3 +1641,53 @@ Der Preis: über mehrere Filter hinweg zu sammeln und dann alles zusammen zu
 übernehmen geht nicht mehr in einem Schritt — man muss den Filter vorher
 weiten. Das ist der seltenere Fall und war die falsche Seite, auf der man
 irren kann.
+
+### 22.7 Nachtrag: der Zielordner, und was ein Browser über Ordner verrät
+
+Gewünscht war, den Zielordner vorher auf der Platte auszuwählen und ihn in den
+Befehl einsetzen zu lassen. Der zweite Teil ist gebaut, der erste ist nicht
+möglich — und das ist gemessen, nicht vermutet.
+
+| Weg | Ergebnis auf einer lokalen Seite |
+|---|---|
+| `showDirectoryPicker()` | **erlaubt** (`file://` ist ein sicherer Kontext), liefert aber einen Handle mit `name`, `resolve()`, `entries()` — **kein Pfadfeld** |
+| `<input webkitdirectory>` | nur relative Pfade der enthaltenen Dateien |
+| `File.path` | existiert nicht (war nie Standard) |
+
+Ein Auswahldialog kann den Befehl also nicht füllen: er verrät den *Namen* des
+Ordners, nie seinen Ort. Das ist Absicht der Browser und keine Lücke.
+
+Gebaut ist deshalb ein **Feld** im Dialog. Es wirkt sofort auf alle Befehle,
+der Wert wird in `localStorage` gemerkt, und ein gesperrter Speicher bricht
+nichts — dann gilt der Standard, ändern geht trotzdem, nur nicht dauerhaft.
+
+**Das Quoting war die eigentliche Arbeit.** Ein Pfad im Befehl muss shell-sicher
+sein, und die Tilde muss dabei ungequotet bleiben, sonst expandiert sie nicht
+und der Ordner heißt wirklich `~`. Also drei Fälle: harmlose Zeichen bleiben
+unberührt, ein Pfad mit `~/` wird nur hinter der Tilde gequotet, alles andere
+ganz. Nachgemessen an vier Eingaben, inklusive einem Apostroph im Namen:
+
+```
+~/Auswahl                  →  --target ~/Auswahl
+~/Bilder 2025              →  --target ~/'Bilder 2025'
+/Volumes/Platte/Ziel       →  --target /Volumes/Platte/Ziel
+~/ganz'normal              →  --target ~/'ganz'\''normal'
+```
+
+### 22.8 Ein Befund, der eine frühere Aussage einschränkt
+
+`showDirectoryPicker()` ist auf `file://` **erlaubt**. Das hat eine Folge, die
+über diese Aufgabe hinausgeht: ein vom Anwender ausdrücklich freigegebener
+Verzeichnis-Handle erlaubt der Seite, Dateien darin zu **lesen und zu
+schreiben** — an der `file://`-Sperre vorbei, weil die Freigabe vom Menschen
+kommt und nicht von der Seite.
+
+Damit ist §31 („aus einer lokal geöffneten Seite lädt der Browser nichts
+herunter") in einem Punkt zu absolut: für den *automatischen* Weg gilt es
+weiterhin, gemessen. Ein Weg über zwei ausdrückliche Freigaben — Exportordner
+lesen, Zielordner schreiben — könnte funktionieren, samt ZIP.
+
+Nicht gebaut, nicht geprüft, und mit einem offenen Vorbehalt: der Nutzen wäre
+Bequemlichkeit, der Preis wären zwei Systemdialoge und ein zweiter Codepfad
+neben `collect`, der dieselben Hashprüfungen bräuchte. Das gehört hier
+festgehalten, damit die Einschränkung als bekannt gilt und nicht als Übersehen.

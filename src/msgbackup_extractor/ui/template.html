@@ -327,6 +327,20 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
   background: var(--accent-soft, transparent);
 }
 .hand .hand-scope p { margin: 0 0 9px; color: var(--text); font-size: 13px; }
+.hand .hand-target {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: 8px; margin: 0 0 14px;
+}
+.hand .hand-target label {
+  font-size: 12px; font-weight: 650; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted);
+}
+.hand .hand-target input {
+  width: 100%; padding: 7px 10px;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px;
+  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 .hand dl.hand-legend {
   margin: 4px 0 16px; padding: 11px 13px;
   border: 1px solid var(--line); border-radius: 9px;
@@ -457,6 +471,12 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
     Datei</strong> geht es kürzer: in der Einzelansicht Rechtsklick auf das Bild
     und „Bild speichern unter…". Das ist eine Funktion des Browsers und geht an
     der Sperre vorbei.</p>
+    <div class="hand-target">
+      <label for="hand-target-input">Zielordner</label>
+      <input id="hand-target-input" type="text" spellcheck="false"
+             autocapitalize="off" autocorrect="off" />
+      <button type="button" id="hand-target-reset" title="Auf ~/Auswahl zurücksetzen">Zurücksetzen</button>
+    </div>
     <div id="hand-steps"></div>
     <dl class="hand-legend">
       <dt><code>--output</code></dt>
@@ -464,7 +484,7 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
       Export-Manifest. Steht schon richtig drin, nichts zu tun.</dd>
       <dt><code>--target</code></dt>
       <dd>Wohin die Auswahl kopiert wird. <strong>Das darfst du ändern</strong>,
-      wenn du sie woanders haben willst. Das Verzeichnis wird angelegt und muss
+      wenn du sie woanders haben willst. Die CLI legt das Verzeichnis an; es muss
       außerhalb des Exports liegen.</dd>
     </dl>
     <div class="actions">
@@ -1327,10 +1347,29 @@ const DATA = /*__INDEX__*/;
   }
   const shellQuote = (s) => "'" + s.replace(/'/g, "'\\''") + "'";
 
+  const ZIEL_STANDARD = "~/Auswahl";
+
+  function zielWert() {
+    const feld = document.getElementById("hand-target-input");
+    return (feld && feld.value.trim()) || ZIEL_STANDARD;
+  }
+
+  /* Ein Pfad im Befehl muss so gequotet sein, dass die Shell ihn versteht -
+     und die Tilde muss dabei UNGEQUOTET bleiben, sonst expandiert sie nicht
+     und der Ordner heisst wirklich "~". */
+  function pfadFuerShell(pfad) {
+    // Die Tilde gehoert dazu, sonst wird aus ~/Auswahl ein ~/'Auswahl' -
+    // korrekt, aber unnoetig. Keines dieser Zeichen hat in der Shell eine
+    // Sonderbedeutung, die quoten muesste.
+    if (/^[A-Za-z0-9_@%+=:,./~-]+$/.test(pfad)) return pfad;
+    if (pfad.startsWith("~/")) return "~/" + shellQuote(pfad.slice(2));
+    return shellQuote(pfad);
+  }
+
   const BEFEHLSKOPF = () =>
     "msgx collect \\\n" +
     "    --output " + shellQuote(exportDir()) + " \\\n" +
-    "    --target ~/Auswahl";
+    "    --target " + pfadFuerShell(zielWert());
 
   // Mehr Befehle als das ist keine Anleitung mehr, sondern eine Zumutung -
   // dann ist die Liste ueber die Standardeingabe der bessere Weg.
@@ -1460,9 +1499,9 @@ const DATA = /*__INDEX__*/;
       const hinweis = document.createElement("p");
       hinweis.className = "hand-note";
       hinweis.textContent =
-        "So viele Pfade passen nicht in eine einzige Befehlszeile. Die Befehle " +
-        "gehen nacheinander in dasselbe Zielverzeichnis; du kannst sie auch " +
-        "zusammen einfügen.";
+        "So viele Pfade passen nicht in eine einzige Befehlszeile. Führe die " +
+        "Befehle der Reihe nach aus — sie gehen in dasselbe Zielverzeichnis, " +
+        "und die CLI merkt sich, was dort schon liegt.";
       document.getElementById("hand-steps").appendChild(hinweis);
     }
   }
@@ -1526,12 +1565,52 @@ const DATA = /*__INDEX__*/;
 
     const plan = planFor(chosen);
     renderPlan(plan, chosen);
+    // Die Befehle neu bauen, sobald der Zielordner geaendert wird - sonst
+    // kopiert man einen Befehl, der nicht zum Feld darueber passt.
+    letzteAuswahl = chosen;
     document.getElementById("hand-said").textContent = "";
     hand.showModal();
     // Sonst oeffnet der Dialog dort, wo er beim letzten Mal stand - bei einer
     // langen Anleitung also am Ende.
     hand.scrollTop = 0;
   });
+  /* Der Zielordner. Ein Ordner-Auswahldialog waere hier nutzlos: der Browser
+     gibt aus Datenschutzgruenden nur den ORDNERNAMEN heraus, nicht den Pfad -
+     gemessen, showDirectoryPicker liefert einen Handle ohne Pfadfeld. Also ein
+     Feld, das man ausfuellt, und der Wert wird gemerkt. */
+  let letzteAuswahl = [];
+  const zielFeld = document.getElementById("hand-target-input");
+  const ZIEL_SCHLUESSEL = "msgx.target";
+
+  function zielLaden() {
+    try {
+      return window.localStorage.getItem(ZIEL_SCHLUESSEL) || ZIEL_STANDARD;
+    } catch {
+      // Auf einer lokalen Datei kann der Speicher gesperrt sein. Dann gilt der
+      // Standard, und geaendert werden kann er trotzdem - nur nicht dauerhaft.
+      return ZIEL_STANDARD;
+    }
+  }
+
+  function zielSpeichern(wert) {
+    try {
+      window.localStorage.setItem(ZIEL_SCHLUESSEL, wert);
+    } catch {
+      /* nicht schlimm */
+    }
+  }
+
+  zielFeld.value = zielLaden();
+  zielFeld.addEventListener("input", () => {
+    zielSpeichern(zielFeld.value.trim());
+    if (letzteAuswahl.length) renderPlan(planFor(letzteAuswahl), letzteAuswahl);
+  });
+  document.getElementById("hand-target-reset").addEventListener("click", () => {
+    zielFeld.value = ZIEL_STANDARD;
+    zielSpeichern(ZIEL_STANDARD);
+    if (letzteAuswahl.length) renderPlan(planFor(letzteAuswahl), letzteAuswahl);
+  });
+
   document.getElementById("hand-close").addEventListener("click", () => hand.close());
   hand.addEventListener("click", (e) => { if (e.target === hand) hand.close(); });
 
