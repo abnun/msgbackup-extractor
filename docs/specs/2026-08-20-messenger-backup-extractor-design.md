@@ -1691,3 +1691,79 @@ Nicht gebaut, nicht geprüft, und mit einem offenen Vorbehalt: der Nutzen wäre
 Bequemlichkeit, der Preis wären zwei Systemdialoge und ein zweiter Codepfad
 neben `collect`, der dieselben Hashprüfungen bräuchte. Das gehört hier
 festgehalten, damit die Einschränkung als bekannt gilt und nicht als Übersehen.
+
+---
+
+## 32. Was ein Browser mit lokalen Ordnern darf — gründlich gemessen
+
+Die Frage war, ob JavaScript oder eine besondere Browser-Schnittstelle auf
+lokale Ordner zugreifen kann: Pfade lesen, im besten Fall direkt schreiben. Die
+Antwort korrigiert mich in einem Punkt, und sie ist dreiteilig.
+
+### 32.1 Die Messungen
+
+**Absolute Pfade: nein, und zwar grundsätzlich.**
+
+| Weg | Ergebnis |
+|---|---|
+| `FileSystemHandle` | `kind, name, isSameEntry, queryPermission, remove, requestPermission` — **kein Pfadfeld** |
+| `File.path` | existiert nicht (war nie Standard, nur Electron) |
+| `File.webkitRelativePath` | vorhanden, aber relativ zum gewählten Ordner |
+| `FileSystemDirectoryHandle.resolve()` | Pfad relativ zu einem **anderen Handle**, nie absolut |
+
+Das ist Absicht der Browser: der Ort einer Datei ist selbst eine Information
+über den Anwender.
+
+**Inhalte lesen, die der Anwender freigibt: ja — bewiesen.** Auf einer
+`file://`-Seite eine Datei in ein `<input type="file">` gelegt (über
+`DOM.setFileInputFiles`, also genau das, was ein Klick bewirkt), dann im Browser
+`arrayBuffer()` und `crypto.subtle.digest('SHA-256')`:
+
+```
+SHA-256 auf der Platte:   521bca9e772217bedb618deaf216109a06f49a7813ec7362a2996910e74bf117
+SHA-256 aus dem Browser:  521bca9e772217bedb618deaf216109a06f49a7813ec7362a2996910e74bf117
+```
+
+Die Sperre aus §31 gilt also für den **automatischen** Zugriff der Seite auf
+ihre Nachbardateien. Was der Mensch ausdrücklich freigibt, darf die Seite lesen.
+
+**Direkt schreiben: die Schnittstelle ist da.** Auf `file://` vorhanden:
+
+```
+FileSystemFileHandle          createWritable, getFile, move
+FileSystemWritableFileStream  seek, truncate, write, mode
+showOpenFilePicker / showSaveFilePicker / showDirectoryPicker
+```
+
+Nicht ausgeführt: ein Schreibvorgang braucht einen echten Klick im
+Systemdialog, und den kann eine kopflose Messung nicht liefern. Vorhandene
+Methoden sind ein starkes Indiz, aber kein Nachweis — das bleibt offen und wird
+hier nicht als erledigt geführt.
+
+### 32.2 Was damit gebaut werden könnte
+
+Ein Kopieren ohne Terminal: Zielordner freigeben (Schreiben), Exportordner
+freigeben (Lesen), und die Seite kopiert selbst. Der bemerkenswerte Teil: **die
+Seite hat die SHA-256-Summen des Manifests bereits eingebettet.** Sie könnte
+jede Kopie prüfen und damit dieselbe Zusage tragen wie `collect --verify` — es
+wäre kein schwächerer Weg.
+
+### 32.3 Warum es trotzdem eine Entscheidung ist und keine Selbstverständlichkeit
+
+* **Nur Chrome und Edge.** Firefox und Safari haben `showDirectoryPicker` nicht.
+  Der Weg über die Kommandozeile bleibt also in jedem Fall und muss der
+  verlässliche sein.
+* **Ein zweiter Codepfad.** Genau das Argument, mit dem der Assistent in §30.2
+  ohne eigene Logik gebaut wurde. Hier ist er unvermeidlich, wenn man im Browser
+  kopieren will — und er müsste die Hashprüfung mitbringen, sonst ist er der
+  schwächere Zwilling.
+* **Zwei Systemdialoge** vor dem ersten Kopiervorgang.
+
+### 32.4 Was das für frühere Aussagen bedeutet
+
+§31 sagte „aus einer lokal geöffneten Seite lädt der Browser nichts herunter".
+Für den Download-Weg gilt das weiter, gemessen. Als allgemeine Aussage über
+Dateizugriff war es zu breit — und das ist innerhalb dieses Projekts nun zum
+dritten Mal dasselbe Muster: eine belegte Messung auf eine breitere Aussage
+ausgedehnt, ohne den neuen Fall zu prüfen. Vorher bei den unscharfen Kacheln
+(falsche Messgröße) und beim `<a download>` (nur `fetch` geprüft).
