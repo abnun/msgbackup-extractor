@@ -503,20 +503,37 @@ text file with one relative path per line.
 
 #### Why the browser cannot do this
 
-A "download as ZIP" button is **impossible** on a `file://` page. Measured
-against the real export:
+Not even for a single file, and not because of the same-origin rule alone.
+Measured:
 
 ```
-fetch:            BLOCKED (TypeError: Failed to fetch)
-XMLHttpRequest:   BLOCKED
-<img> display:    OK
-canvas readback:  BLOCKED (SecurityError — tainted canvas)
+fetch:              BLOCKED (TypeError: Failed to fetch)
+XMLHttpRequest:     BLOCKED
+<img> display:      OK
+canvas readback:    BLOCKED (SecurityError — tainted canvas)
+<a download> click: NOTHING HAPPENS — no download, no error
 ```
 
-JavaScript may *display* local files but not *read* their bytes — the same
-same-origin rule that forces the index to be embedded. A button promising a
-download and delivering nothing would be worse than no button. So the UI
-selects and the CLI gathers.
+The last line is the one that decides it, and it needs a control to be worth
+anything. The same page, the same anchor, the same `download` attribute, the
+same genuine user gesture, an explicitly allowed download directory:
+
+| Served over | Download events | Result |
+|---|---|---|
+| `http://` | `downloadWillBegin`, then progress | the file arrives |
+| `file://` | **none at all** | nothing, and no error |
+
+So it is the URL scheme, not the gesture and not the configuration. Chrome
+silently declines to download anything from a page opened as a file.
+
+What still works, because it is the browser's own function rather than the
+page's: **right-click on the image → "Save image as…"**. For one file that is
+the short way, and the selection dialog says so.
+
+What would fix it properly is serving the export over `http://localhost` — and
+that means opening a socket. This project promises that no module imports one,
+and a test enforces it. The convenience is not worth breaking the one guarantee
+the whole thing rests on. So the UI selects and the CLI gathers.
 
 ### Verify
 

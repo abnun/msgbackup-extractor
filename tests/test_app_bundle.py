@@ -431,3 +431,28 @@ def test_an_explicitly_given_msgx_is_still_tried(
 
     assert code == 2
     assert "laeuft nicht" in capsys.readouterr().err
+
+
+def test_the_window_title_is_only_set_on_a_terminal(
+    builder: ModuleType, tmp_path: Path, fake_msgx: Path
+) -> None:
+    """Sonst steht die Escape-Sequenz als Text in der Meldung.
+
+    Genau dort, wo jemand sie lesen soll: laeuft start.command ohne Terminal,
+    erschien vorher `]0;msgbackup-extractor` vor der Fehlermeldung.
+    """
+    bundle = builder.build_bundle(tmp_path, fake_msgx, "1", quiet=True)
+    start = bundle / "Contents" / "Resources" / "start.command"
+    fake_msgx.unlink()
+
+    result = subprocess.run(
+        ["/bin/sh", str(start)],
+        capture_output=True,
+        text=True,
+        input="\n",
+        check=False,
+    )
+
+    assert "\033]0;" not in result.stdout
+    assert "]0;" not in result.stdout
+    assert result.stdout.lstrip().startswith("msgbackup-extractor")

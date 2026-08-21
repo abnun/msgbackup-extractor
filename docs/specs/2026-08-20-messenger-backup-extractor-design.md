@@ -1495,3 +1495,75 @@ Prüfung.
 Das ist dasselbe Muster wie überall in diesem Projekt: nicht fragen, ob etwas da
 ist, sondern ob es tut, was es soll. Hier hat es beim ersten Lauf einen Fehler
 gefunden, den kein Test gestellt hätte.
+
+---
+
+## 31. Was der Browser aus einer lokalen Datei darf
+
+Die Frage lautete: warum kann man die Bilder — nicht die Vorschaubilder —
+nicht direkt aus dem Browser herunterladen? Sie war berechtigt, und meine
+Antwort im UI war **falsch begründet**.
+
+### 31.1 Was ich gemessen hatte, und was ich daraus zu breit schloss
+
+Gemessen hatte ich in §22.2: `fetch` blockiert, `XMLHttpRequest` blockiert,
+Canvas-Auslesen blockiert. Daraus folgt zwingend, dass die Seite **kein ZIP**
+bauen kann — dafür müsste JavaScript Bytes lesen.
+
+Der Dialogtext machte daraus „der Browser darf lokale Dateien anzeigen, aber
+nicht lesen". Für ein ZIP stimmt das. Für eine **einzelne** Datei war es zu
+breit: ein gewöhnlicher `<a download>`-Link braucht kein JavaScript, das etwas
+liest — der Browser holt die Datei selbst. Diesen Fall hatte ich nie geprüft.
+
+### 31.2 Die Messung, und warum sie eine Gegenprobe brauchte
+
+Ein erster Versuch war unschlüssig: ein programmatischer `.click()` gilt nicht
+als Nutzergeste, und Downloads verlangen eine. „Nichts passiert" konnte also
+zweierlei heißen.
+
+Gemessen über das DevTools-Protokoll, das eine echte Geste vortäuschen
+(`Runtime.evaluate` mit `userGesture`) und den Zielordner vorgeben kann
+(`Browser.setDownloadBehavior`). Entscheidend war die **Gegenprobe über
+`http://`**: dieselbe Seite, derselbe Link, dasselbe Attribut, dieselbe Geste,
+derselbe erlaubte Ordner.
+
+| Ausgeliefert über | Download-Ereignisse | Ergebnis |
+|---|---|---|
+| `http://` | `downloadWillBegin`, sechs `downloadProgress` | Datei liegt im Zielordner |
+| `file://` | **keine** | nichts, keine Fehlermeldung |
+
+Ohne die `http://`-Zeile wäre das kein Nachweis, sondern eine Vermutung mit
+Zahlen. Mit ihr ist klar: es ist das URL-Schema. Nicht die Geste, nicht die
+Einstellung, und auch nicht die Same-Origin-Regel allein.
+
+Die Sperre ist außerdem **stumm**. Ein Download-Knopf im UI hätte nicht
+gemeckert, er hätte gar nichts getan — die schlechteste Art zu scheitern.
+
+### 31.3 Was daraus folgt
+
+**Der CLI-Weg bleibt richtig, die Begründung ist neu.** Der Dialog sagt jetzt,
+was gemessen ist: aus einer lokal geöffneten Seite lädt der Browser nichts
+herunter, ohne Fehlermeldung.
+
+**Für eine einzelne Datei gibt es einen kurzen Weg, und den hatte ich
+verschwiegen.** Rechtsklick auf das Bild, „Bild speichern unter…" — eine
+Funktion des Browsers, nicht der Seite, und damit an der Sperre vorbei. Der
+Hinweis steht jetzt in der Einzelansicht und, bei genau einer ausgewählten
+Datei, im Auswahldialog. Jemanden für ein einzelnes Bild ins Terminal zu
+schicken war unangemessen.
+
+**Es gäbe eine echte Lösung, und sie ist bewusst nicht gebaut.** Über
+`http://localhost` ausgeliefert funktionierten Downloads, ZIP inklusive. Das
+heißt aber, einen Socket zu öffnen, und dieses Projekt sagt zu, dass kein Modul
+einen importiert — `test_no_network.py` erzwingt das statisch und dynamisch. Die
+Bequemlichkeit ist die eine Zusage nicht wert, auf der alles andere steht. Das
+gehört in die Dokumentation, damit die Einschränkung als Entscheidung erkennbar
+ist und nicht als Versäumnis.
+
+### 31.4 Das Muster dahinter
+
+Zum zweiten Mal in diesem Projekt war eine Aussage im Kern richtig und in der
+Begründung falsch — vorher bei den unscharfen Kacheln, wo die Messgröße nicht
+stimmte. Beide Male lag es daran, dass ich von einer belegten Aussage („JS darf
+die Bytes nicht lesen") auf eine breitere geschlossen habe („der Browser darf
+nicht") ohne den neuen Fall zu prüfen.

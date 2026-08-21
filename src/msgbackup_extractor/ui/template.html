@@ -318,6 +318,10 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
   text-transform: none; letter-spacing: 0; color: var(--text);
 }
 .hand p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+.hand p.hand-single {
+  border-left: 3px solid var(--accent);
+  padding: 8px 0 8px 12px; margin-bottom: 16px; color: var(--text);
+}
 .hand pre {
   margin: 0 0 8px; padding: 11px 13px; overflow-x: auto;
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px;
@@ -398,6 +402,10 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
   <div class="hand">
     <h2>Auswahl herunterladen</h2>
     <p id="hand-intro"></p>
+    <p id="hand-single" class="hand-single" hidden>Für <strong>eine einzelne
+    Datei</strong> geht es kürzer: in der Einzelansicht Rechtsklick auf das Bild
+    und „Bild speichern unter…". Das ist eine Funktion des Browsers und geht an
+    der Sperre vorbei.</p>
     <h3>Schritt 1 — Liste kopieren</h3>
     <textarea id="hand-list" readonly spellcheck="false"></textarea>
     <h3>Schritt 2 — im Terminal einsammeln</h3>
@@ -426,6 +434,9 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
       <div class="nav">
         <button type="button" id="v-pick"></button>
       </div>
+      <p class="hint">Zum Speichern: Rechtsklick auf das Bild &rarr;
+        „Bild speichern unter…". Ein Download-Knopf ist hier nicht möglich —
+        aus einer lokal geöffneten Seite lädt der Browser nichts herunter.</p>
       <p class="hint"><kbd>←</kbd> <kbd>→</kbd> blättern, <kbd>Leer</kbd> auswählen,
         <kbd>Esc</kbd> schließen</p>
     </div>
@@ -1272,10 +1283,19 @@ const DATA = /*__INDEX__*/;
   document.getElementById("tray-hand").addEventListener("click", () => {
     const chosen = selectedItems();
     if (!chosen.length) return;
+    // Die Begruendung ist gemessen, nicht vermutet: derselbe Link mit
+    // download-Attribut laedt ueber HTTP ausgeliefert herunter und loest aus
+    // einer lokalen Datei nicht einmal ein downloadWillBegin aus. Siehe
+    // Designdokument, "Was der Browser aus einer lokalen Datei darf".
+    // (Kein literales Schema hier: die Seite darf keine URL enthalten, und ein
+    // Test prueft genau das.)
+    const eine = chosen.length === 1;
     document.getElementById("hand-intro").textContent =
-      `${num(chosen.length)} Dateien, ${size(chosen.reduce((a, it) => a + (it.s || 0), 0))}. ` +
-      "Der Browser darf lokale Dateien anzeigen, aber nicht lesen — deshalb " +
-      "sammelt sie die CLI ein.";
+      `${num(chosen.length)} ${eine ? "Datei" : "Dateien"}, ` +
+      `${size(chosen.reduce((a, it) => a + (it.s || 0), 0))}. ` +
+      "Aus einer lokal geoeffneten Seite laedt der Browser nichts herunter — " +
+      "ohne Fehlermeldung, es passiert einfach nichts. Deshalb sammelt die CLI ein.";
+    document.getElementById("hand-single").hidden = !eine;
     document.getElementById("hand-list").value =
       chosen.map((it) => it.p).join("\n") + "\n";
     document.getElementById("hand-cmd").textContent = command();

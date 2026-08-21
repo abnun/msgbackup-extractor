@@ -519,20 +519,39 @@ relativen Pfad je Zeile.
 
 #### Warum der Browser das nicht kann
 
-Ein „Als ZIP herunterladen"-Knopf ist auf einer `file://`-Seite
-**unmöglich**. Am echten Export gemessen:
+Nicht einmal für eine einzelne Datei, und nicht allein wegen der
+Same-Origin-Regel. Gemessen:
 
 ```
-fetch:            BLOCKIERT (TypeError: Failed to fetch)
-XMLHttpRequest:   BLOCKIERT
-<img> anzeigen:   OK
-canvas auslesen:  BLOCKIERT (SecurityError — tainted canvas)
+fetch:                BLOCKIERT (TypeError: Failed to fetch)
+XMLHttpRequest:       BLOCKIERT
+<img> anzeigen:       OK
+canvas auslesen:      BLOCKIERT (SecurityError — tainted canvas)
+<a download> klicken: ES PASSIERT NICHTS — kein Download, kein Fehler
 ```
 
-JavaScript darf lokale Dateien *anzeigen*, aber nicht ihre Bytes *lesen* —
-dieselbe Same-Origin-Regel, die auch den eingebetteten Index erzwingt. Ein
-Knopf, der einen Download verspricht und nichts liefert, wäre schlimmer als kein
-Knopf. Also wählt das UI aus, und das CLI sammelt ein.
+Die letzte Zeile entscheidet, und sie ist nur mit einer Gegenprobe etwas wert.
+Dieselbe Seite, derselbe Link, dasselbe `download`-Attribut, dieselbe echte
+Nutzergeste, ein ausdrücklich erlaubter Zielordner:
+
+| Ausgeliefert über | Download-Ereignisse | Ergebnis |
+|---|---|---|
+| `http://` | `downloadWillBegin`, dann Fortschritt | die Datei kommt an |
+| `file://` | **überhaupt keine** | nichts, und kein Fehler |
+
+Es ist also das URL-Schema, nicht die Geste und nicht die Einstellung. Chrome
+lehnt stillschweigend ab, aus einer als Datei geöffneten Seite irgendetwas
+herunterzuladen.
+
+Was weiterhin geht, weil es eine Funktion des Browsers ist und nicht der Seite:
+**Rechtsklick auf das Bild → „Bild speichern unter…"**. Für eine einzelne Datei
+ist das der kurze Weg, und der Auswahldialog sagt das inzwischen auch.
+
+Richtig beheben ließe es sich nur, indem der Export über `http://localhost`
+ausgeliefert wird — und das heißt, einen Socket zu öffnen. Dieses Projekt sagt
+zu, dass kein Modul einen importiert, und ein Test erzwingt das. Die
+Bequemlichkeit ist die eine Zusage nicht wert, auf der das Ganze steht. Also
+wählt das UI aus, und die CLI sammelt ein.
 
 ### Prüfen
 

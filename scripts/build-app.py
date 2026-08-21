@@ -217,7 +217,12 @@ START: Final = """#!/bin/sh
 # naechste Start - statt lautlos nichts zu tun.
 MSGX={msgx}
 
-printf '\\033]0;msgbackup-extractor\\007'
+# Fenstertitel nur setzen, wenn die Ausgabe wirklich ein Terminal ist.
+# Sonst erscheint die Escape-Sequenz als Text mitten in der Meldung, die
+# jemand gerade lesen soll.
+if [ -t 1 ]; then
+    printf '\\033]0;msgbackup-extractor\\007'
+fi
 
 if [ ! -x "$MSGX" ]; then
     echo "msgbackup-extractor"
