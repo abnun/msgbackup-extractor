@@ -312,6 +312,7 @@ def build_index(
         # Der Befehl, der die Zwischenablage in eine Pipe schreibt -
         # je System ein anderer. Die Seite nennt ihn im Uebergabedialog.
         "clipboard": platforms.clipboard_command(),
+        "cmdmax": platforms.command_line_budget(),
         "chats": chats,
         "counts": {
             "entries": len(entries),
@@ -562,6 +563,7 @@ def build_combined_index(
         # Der Befehl, der die Zwischenablage in eine Pipe schreibt -
         # je System ein anderer. Die Seite nennt ihn im Uebergabedialog.
         "clipboard": platforms.clipboard_command(),
+        "cmdmax": platforms.command_line_budget(),
         "messengers": messengers,
         "sources": per_messenger,
         "chats": [c["n"] for c in chats],

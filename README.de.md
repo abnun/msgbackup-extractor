@@ -498,12 +498,28 @@ Datum"; die Einzelansicht zeigt ihr Dateidatum getrennt.
 
 Der Auswahldialog führt auf:
 
+Bei einer kleinen Auswahl ist es ein Befehl mit den Pfaden darin:
+
+```bash
+msgx collect \
+    --output "~/messenger-extract/export/threema" \
+    --target ~/auswahl \
+    'media/images/a.jpg' 'media/videos/b.mp4'
+```
+
+Bei einer großen verteilt der Dialog sie auf mehrere Befehle — `collect` darf
+mehrfach in dasselbe Ziel laufen und merkt sich, was dort schon liegt. Erst wenn
+selbst das unzumutbar viele werden, kommt die Liste über die Standardeingabe:
+
 ```bash
 pbpaste | msgx collect \
     --output "~/messenger-extract/export/threema" \
     --target ~/auswahl \
     --selection -
 ```
+
+Was auch immer es ist: der Dialog zeigt **jeden** Befehl, den du ausführen
+musst, nummeriert.
 
 Unter Windows lautet der Befehl für die Zwischenablage
 `powershell -Command Get-Clipboard`; der Dialog nennt den passenden für das

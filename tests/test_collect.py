@@ -9,7 +9,7 @@ Liste der Pfade.
 from __future__ import annotations
 
 import io
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -142,18 +142,101 @@ def test_keep_structure_preserves_directories(export_dir: Path, tmp_path: Path) 
         assert (target / relative).is_file()
 
 
-def test_name_collisions_do_not_overwrite(export_dir: Path, tmp_path: Path) -> None:
-    """Beim flachen Sammeln koennen zwei Pfade denselben Dateinamen haben."""
+def test_the_same_file_under_two_paths_is_collected_once(
+    export_dir: Path, tmp_path: Path
+) -> None:
+    """Medienpfad und Chat-Verknuepfung sind dieselbe Datei, nicht zwei.
+
+    Frueher entstanden daraus `Vertrag.pdf` und `Vertrag-1.pdf` - zwei Kopien
+    desselben Inodes. Das war als Schutz gegen Ueberschreiben gedacht, war aber
+    an dieser Stelle keiner: es geht nichts verloren, wenn zwei Namen auf
+    denselben Inhalt zeigen. Es entstand nur Doppeltes.
+    """
     manifest = _manifest(export_dir)
     entry = next(e for e in manifest.files if e.expects_file and e.link_paths)
     assert entry.output_path is not None
-    # Derselbe Inhalt unter zwei Pfaden: Hauptpfad und Chat-Verknuepfung.
     paths = [entry.output_path, entry.link_paths[0]]
     target = tmp_path / "auswahl"
+
     result = Collector(manifest=manifest, target_dir=target).run(paths)
-    targets = [f.target for f in result.files]
-    assert len(set(targets)) == 2, "Der zweite Pfad darf den ersten nicht ersetzen"
-    assert all((target / t).is_file() for t in targets if t)
+
+    targets = {f.target for f in result.files if f.target}
+    assert len(targets) == 1, "derselbe Inhalt gehoert einmal ins Ziel"
+    assert (target / next(iter(targets))).is_file()
+    assert len(list(target.iterdir())) == 1
+
+
+def test_two_different_files_with_one_name_both_survive(
+    export_dir: Path, tmp_path: Path
+) -> None:
+    """Die Eigenschaft, auf die es wirklich ankommt.
+
+    Zwei verschiedene Dateien, die flach gesammelt denselben Namen haetten -
+    keine darf die andere ersetzen.
+    """
+    manifest = _manifest(export_dir)
+    zwei = [
+        e for e in manifest.files if e.expects_file and e.output_path
+    ][:2]
+    assert len(zwei) == 2
+    # Beide auf denselben Dateinamen umbenennen, damit sie kollidieren.
+    for eintrag in zwei:
+        alt_pfad = export_dir / eintrag.output_path
+        neu_pfad = alt_pfad.parent / f"gleicher-name{alt_pfad.suffix}"
+        if alt_pfad.exists() and not neu_pfad.exists():
+            alt_pfad.rename(neu_pfad)
+            object.__setattr__(
+                eintrag,
+                "output_path",
+                str(PurePosixPath(eintrag.output_path).parent / neu_pfad.name),
+            )
+    target = tmp_path / "auswahl"
+
+    result = Collector(manifest=manifest, target_dir=target).run(
+        [e.output_path for e in zwei]
+    )
+
+    targets = {f.target for f in result.files if f.target}
+    assert len(targets) == 2, "keine darf die andere ersetzen"
+    assert all((target / name).is_file() for name in targets)
+
+
+def test_a_second_run_into_the_same_target_keeps_both(
+    export_dir: Path, tmp_path: Path
+) -> None:
+    """Der Fall, den mehrere Befehle in dasselbe Ziel ausloesen.
+
+    Frueher startete die Namensvergabe je Lauf bei null, ein zweiter Lauf
+    ueberschrieb also eine gleichnamige Datei des ersten. Genau das passiert,
+    sobald eine grosse Auswahl auf mehrere Aufrufe verteilt wird.
+    """
+    manifest = _manifest(export_dir)
+    eintraege = [e for e in manifest.files if e.expects_file and e.output_path][:2]
+    assert len(eintraege) == 2
+    target = tmp_path / "auswahl"
+
+    Collector(manifest=manifest, target_dir=target).run([eintraege[0].output_path])
+    vorher = sorted(p.name for p in target.iterdir())
+    Collector(manifest=manifest, target_dir=target).run([eintraege[1].output_path])
+    nachher = sorted(p.name for p in target.iterdir())
+
+    assert len(nachher) == 2, f"aus {vorher} wurde {nachher}"
+
+
+def test_the_same_selection_twice_makes_no_duplicates(
+    export_dir: Path, tmp_path: Path
+) -> None:
+    """Denselben Befehl zweimal auszufuehren darf nichts verdoppeln."""
+    manifest = _manifest(export_dir)
+    paths = _some_paths(export_dir, 3)
+    target = tmp_path / "auswahl"
+
+    Collector(manifest=manifest, target_dir=target).run(paths)
+    erste = sorted(p.name for p in target.iterdir())
+    Collector(manifest=manifest, target_dir=target).run(paths)
+    zweite = sorted(p.name for p in target.iterdir())
+
+    assert erste == zweite
 
 
 def test_link_paths_are_valid_selections(export_dir: Path, tmp_path: Path) -> None:

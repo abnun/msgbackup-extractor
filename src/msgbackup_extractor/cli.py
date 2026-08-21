@@ -350,9 +350,10 @@ def build_parser() -> argparse.ArgumentParser:
         "collect",
         help="Im UI ausgewaehlte Dateien in ein Verzeichnis sammeln",
         description=(
-            "Traegt die Dateien einer Auswahlliste zusammen. Die Liste kommt "
-            "aus der lokalen Ansicht (msgx ui) - JavaScript darf lokale Dateien "
-            "anzeigen, aber nicht lesen, deshalb sammelt die CLI sie ein."
+            "Traegt ausgewaehlte Dateien zusammen. Die Auswahl kommt aus der "
+            "lokalen Ansicht (msgx ui): aus einer als Datei geoeffneten Seite "
+            "laedt der Browser nichts herunter - gemessen, ohne Fehlermeldung -, "
+            "deshalb sammelt die CLI sie ein."
         ),
         epilog=(
             "Beispiel mit der Zwischenablage:\n"
@@ -376,10 +377,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Wohin gesammelt wird. Muss ausserhalb des Exports liegen.",
     )
     collect.add_argument(
+        "paths",
+        nargs="*",
+        metavar="PFAD",
+        help=(
+            "Die zu sammelnden Pfade, relativ zum Export. Fuer kleine Auswahlen "
+            "der kuerzere Weg; bei vielen Dateien sprengt das die Laenge einer "
+            "Befehlszeile, dann nimm --selection."
+        ),
+    )
+    collect.add_argument(
         "--selection",
         metavar="PFAD",
-        required=True,
-        help="Datei mit einem relativen Pfad je Zeile, oder - fuer die Standardeingabe.",
+        help=(
+            "Datei mit einem relativen Pfad je Zeile, oder - fuer die "
+            "Standardeingabe. Alternative zu den Pfaden als Argument."
+        ),
     )
     collect.add_argument(
         "--hardlinks",
@@ -910,7 +923,29 @@ def _command_collect(arguments: argparse.Namespace) -> int:
         print(f"Fehler: {error}", file=sys.stderr)
         return EXIT_ERROR
 
-    if arguments.selection == "-":
+    # Zwei Wege herein, ein Weg weiter: beides wird zu Text und laeuft durch
+    # denselben parse_selection, damit Entdopplung und Normalisierung nicht
+    # zweimal existieren.
+    if arguments.paths and arguments.selection:
+        print(
+            "Fehler: Pfade als Argument UND --selection angegeben. Bitte eines "
+            "von beiden.",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    if not arguments.paths and not arguments.selection:
+        print(
+            "Fehler: Keine Auswahl angegeben. Entweder die Pfade direkt:\n"
+            "    msgx collect --output EXPORT --target ZIEL media/images/a.jpg\n"
+            "oder eine Liste:\n"
+            "    msgx collect --output EXPORT --target ZIEL --selection liste.txt",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+
+    if arguments.paths:
+        text = "\n".join(arguments.paths)
+    elif arguments.selection == "-":
         text = sys.stdin.read()
     else:
         source = Path(arguments.selection).expanduser()

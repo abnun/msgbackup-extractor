@@ -179,6 +179,22 @@ def open_command() -> tuple[str, ...]:
     return ("xdg-open",)
 
 
+def command_line_budget() -> int:
+    """Wie viele Zeichen ein Befehl haben darf, damit er sicher noch geht.
+
+    Nicht das dokumentierte Maximum, sondern ein Vorrat darunter: unter macOS
+    und Linux zaehlt die Umgebung mit ins `ARG_MAX`, und cmd.exe bricht bei
+    8191 Zeichen ab. Wer knapp unter der Grenze plant, baut einen Befehl, der
+    auf einem anderen Rechner platzt.
+
+    Wird gebraucht, um zu entscheiden, ob die ausgewaehlten Pfade direkt in den
+    Befehl passen oder ob es die Liste ueber die Standardeingabe braucht.
+    """
+    if is_windows():
+        return 7000
+    return 100_000
+
+
 def permission_hint(path: Path) -> str:
     """Was zu tun ist, wenn ein Backup-Verzeichnis nicht lesbar ist."""
     if is_macos():

@@ -167,7 +167,11 @@ class Collector:
             forbidden_label="Export",
         )
         results: list[CollectedFile] = []
-        used: set[PurePosixPath] = set()
+        # Was schon im Ziel liegt, ist belegt. Ohne das ueberschreibt ein
+        # zweiter Lauf eine gleichnamige Datei des ersten - und das ist kein
+        # Sonderfall, sondern der Regelfall, sobald eine grosse Auswahl auf
+        # mehrere Aufrufe verteilt wird.
+        used: set[PurePosixPath] = self._existing_names()
 
         for relative in selection:
             entry = known.get(relative)
@@ -202,7 +206,9 @@ class Collector:
                     continue
 
             destination = self._unique(
-                _target_name(relative, keep_structure=self.options.keep_structure), used
+                _target_name(relative, keep_structure=self.options.keep_structure),
+                used,
+                source,
             )
             if self.options.dry_run:
                 results.append(
@@ -260,9 +266,35 @@ class Collector:
                 logger.debug("Hardlink nicht moeglich (%s), kopiere", type(error).__name__)
         shutil.copy2(source, target)
 
-    @staticmethod
-    def _unique(candidate: PurePosixPath, used: set[PurePosixPath]) -> PurePosixPath:
-        """Vermeidet Kollisionen beim flachen Sammeln, statt zu ueberschreiben."""
+    def _existing_names(self) -> set[PurePosixPath]:
+        """Namen, die im Zielverzeichnis schon vergeben sind."""
+        if not self.target_dir.exists():
+            return set()
+        namen: set[PurePosixPath] = set()
+        for pfad in self.target_dir.rglob("*"):
+            if pfad.is_file():
+                namen.add(PurePosixPath(pfad.relative_to(self.target_dir).as_posix()))
+        return namen
+
+    def _unique(
+        self,
+        candidate: PurePosixPath,
+        used: set[PurePosixPath],
+        source: Path | None = None,
+    ) -> PurePosixPath:
+        """Vermeidet Kollisionen beim flachen Sammeln, statt zu ueberschreiben.
+
+        Eine Ausnahme: liegt unter dem Namen schon **dieselbe** Datei - bei
+        Hardlinks derselbe Inode -, dann ist sie bereits eingesammelt. Sonst
+        wuerde derselbe Aufruf zweimal ausgefuehrt Kopien anlegen.
+        """
+        if candidate in used and source is not None:
+            vorhanden = self.target_dir / candidate
+            try:
+                if vorhanden.exists() and os.path.samefile(vorhanden, source):
+                    return candidate
+            except OSError:
+                pass
         if candidate not in used:
             used.add(candidate)
             return candidate

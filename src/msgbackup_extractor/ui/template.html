@@ -318,6 +318,9 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
   text-transform: none; letter-spacing: 0; color: var(--text);
 }
 .hand p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+.hand p.hand-note {
+  margin: 6px 0 14px; color: var(--muted); font-size: 12.5px;
+}
 .hand p.hand-single {
   border-left: 3px solid var(--accent);
   padding: 8px 0 8px 12px; margin-bottom: 16px; color: var(--text);
@@ -406,13 +409,10 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
     Datei</strong> geht es kürzer: in der Einzelansicht Rechtsklick auf das Bild
     und „Bild speichern unter…". Das ist eine Funktion des Browsers und geht an
     der Sperre vorbei.</p>
-    <h3>Schritt 1 — Liste kopieren</h3>
-    <textarea id="hand-list" readonly spellcheck="false"></textarea>
-    <h3>Schritt 2 — im Terminal einsammeln</h3>
-    <pre id="hand-cmd"></pre>
+    <div id="hand-steps"></div>
     <div class="actions">
-      <button type="button" class="primary" id="hand-copy">Liste kopieren</button>
-      <button type="button" id="hand-copy-cmd">Befehl kopieren</button>
+      <button type="button" class="primary" id="hand-copy-cmd">Befehl kopieren</button>
+      <button type="button" id="hand-copy" hidden>Liste kopieren</button>
       <span class="said" id="hand-said"></span>
       <span class="spacer"></span>
       <button type="button" id="hand-close">Schließen</button>
@@ -1249,13 +1249,113 @@ const DATA = /*__INDEX__*/;
   }
   const shellQuote = (s) => "'" + s.replace(/'/g, "'\\''") + "'";
 
-  function command() {
-    // Der Befehl kommt aus dem Index, weil er je Betriebssystem anders heisst.
-    const clip = DATA.clipboard || "pbpaste";
-    return clip + " | msgx collect \\\n" +
-      "    --output " + shellQuote(exportDir()) + " \\\n" +
-      "    --target ~/Auswahl \\\n" +
-      "    --selection -";
+  const BEFEHLSKOPF = () =>
+    "msgx collect \\\n" +
+    "    --output " + shellQuote(exportDir()) + " \\\n" +
+    "    --target ~/Auswahl";
+
+  // Mehr Befehle als das ist keine Anleitung mehr, sondern eine Zumutung -
+  // dann ist die Liste ueber die Standardeingabe der bessere Weg.
+  const MAX_BEFEHLE = 8;
+
+  /* Die Pfade in so viele Befehle aufteilen, dass jeder in eine Befehlszeile
+     passt. Die Grenze kommt aus dem Index, weil cmd.exe bei 8191 Zeichen
+     abbricht und ARG_MAX anderswo viel groesser ist. `msgx collect` darf
+     mehrfach in dasselbe Ziel laufen: es merkt sich, was dort schon liegt. */
+  function batches(chosen) {
+    const grenze = DATA.cmdmax || 7000;
+    const kopfLaenge = BEFEHLSKOPF().length;
+    const gruppen = [];
+    let aktuell = [];
+    let laenge = kopfLaenge;
+    for (const it of chosen) {
+      const zeile = " \\\n    " + shellQuote(it.p);
+      if (aktuell.length && laenge + zeile.length > grenze) {
+        gruppen.push(aktuell);
+        aktuell = [];
+        laenge = kopfLaenge;
+      }
+      aktuell.push(it);
+      laenge += zeile.length;
+    }
+    if (aktuell.length) gruppen.push(aktuell);
+    return gruppen;
+  }
+
+  function befehlFuer(gruppe) {
+    return BEFEHLSKOPF() + gruppe.map((it) => " \\\n    " + shellQuote(it.p)).join("");
+  }
+
+  function listenBefehl() {
+    // Der Befehl fuer die Zwischenablage heisst je Betriebssystem anders.
+    return (DATA.clipboard || "pbpaste") + " | " + BEFEHLSKOPF() + " \\\n    --selection -";
+  }
+
+  /* Immer eine vollstaendige Anleitung: jeder Schritt, den man ausfuehren
+     muss, steht da - auch wenn es mehrere Befehle sind. */
+  function planFor(chosen) {
+    const gruppen = batches(chosen);
+    if (gruppen.length <= MAX_BEFEHLE) {
+      return {
+        kind: gruppen.length === 1 ? "einer" : "mehrere",
+        commands: gruppen.map(befehlFuer),
+        list: null,
+      };
+    }
+    return { kind: "liste", commands: [listenBefehl()], list: true };
+  }
+
+  function renderPlan(plan, chosen) {
+    const box = document.getElementById("hand-steps");
+    box.replaceChildren();
+    let nummer = 0;
+    const schritt = (titel) => {
+      nummer += 1;
+      const h = document.createElement("h3");
+      h.textContent = `Schritt ${nummer} — ${titel}`;
+      box.appendChild(h);
+    };
+
+    if (plan.list) {
+      schritt("Liste kopieren");
+      const ta = document.createElement("textarea");
+      ta.id = "hand-list";
+      ta.readOnly = true;
+      ta.spellcheck = false;
+      ta.value = chosen.map((it) => it.p).join("\n") + "\n";
+      box.appendChild(ta);
+      schritt("im Terminal einsammeln");
+      const pre = document.createElement("pre");
+      pre.textContent = plan.commands[0];
+      box.appendChild(pre);
+      return;
+    }
+
+    plan.commands.forEach((befehl, i) => {
+      schritt(
+        plan.commands.length === 1
+          ? "im Terminal ausführen"
+          : `im Terminal ausführen (${i + 1} von ${plan.commands.length})`
+      );
+      const pre = document.createElement("pre");
+      pre.textContent = befehl;
+      box.appendChild(pre);
+    });
+    if (plan.commands.length > 1) {
+      const hinweis = document.createElement("p");
+      hinweis.className = "hand-note";
+      hinweis.textContent =
+        "So viele Pfade passen nicht in eine einzige Befehlszeile. Die Befehle " +
+        "gehen nacheinander in dasselbe Zielverzeichnis; du kannst sie auch " +
+        "zusammen einfügen.";
+      box.appendChild(hinweis);
+    }
+  }
+
+  function alleBefehle() {
+    return Array.from(document.querySelectorAll("#hand-steps pre"))
+      .map((p) => p.textContent)
+      .join("\n");
   }
 
   function say(text) {
@@ -1296,17 +1396,34 @@ const DATA = /*__INDEX__*/;
       "Aus einer lokal geoeffneten Seite laedt der Browser nichts herunter — " +
       "ohne Fehlermeldung, es passiert einfach nichts. Deshalb sammelt die CLI ein.";
     document.getElementById("hand-single").hidden = !eine;
-    document.getElementById("hand-list").value =
-      chosen.map((it) => it.p).join("\n") + "\n";
-    document.getElementById("hand-cmd").textContent = command();
+
+    const plan = planFor(chosen);
+    renderPlan(plan, chosen);
+    const mehrere = plan.commands.length > 1;
+    const cmdKnopf = document.getElementById("hand-copy-cmd");
+    const listeKnopf = document.getElementById("hand-copy");
+    cmdKnopf.textContent = mehrere ? "Alle Befehle kopieren" : "Befehl kopieren";
+    listeKnopf.hidden = !plan.list;
+    // Hervorgehoben ist, was Schritt 1 ist. Im Listenweg ist das die Liste.
+    cmdKnopf.classList.toggle("primary", !plan.list);
+    listeKnopf.classList.toggle("primary", !!plan.list);
+    if (plan.list) {
+      // Reihenfolge im Dialog an die Reihenfolge der Schritte anpassen.
+      listeKnopf.parentNode.insertBefore(listeKnopf, cmdKnopf);
+    } else {
+      cmdKnopf.parentNode.insertBefore(cmdKnopf, listeKnopf);
+    }
     document.getElementById("hand-said").textContent = "";
     hand.showModal();
   });
   document.getElementById("hand-copy").addEventListener("click", () => {
-    toClipboard(document.getElementById("hand-list").value, "Liste");
+    const liste = document.getElementById("hand-list");
+    if (liste) toClipboard(liste.value, "Liste");
   });
   document.getElementById("hand-copy-cmd").addEventListener("click", () => {
-    toClipboard(command(), "Befehl");
+    // Genau das kopieren, was dasteht - nicht neu bauen. Sonst koennen
+    // Anzeige und Zwischenablage auseinanderlaufen.
+    toClipboard(alleBefehle(), "Befehl");
   });
   document.getElementById("hand-close").addEventListener("click", () => hand.close());
   hand.addEventListener("click", (e) => { if (e.target === hand) hand.close(); });

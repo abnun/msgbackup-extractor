@@ -483,12 +483,28 @@ shows their file date separately.
 
 The selection dialog leads to:
 
+For a small selection it is one command with the paths in it:
+
+```bash
+msgx collect \
+    --output "~/messenger-extract/export/threema" \
+    --target ~/selection \
+    'media/images/a.jpg' 'media/videos/b.mp4'
+```
+
+For a large one the dialog splits it across several commands — `collect` may run
+repeatedly into the same target, and it remembers what is already there. Only
+when even that becomes unreasonable does it fall back to a list on standard
+input:
+
 ```bash
 pbpaste | msgx collect \
     --output "~/messenger-extract/export/threema" \
     --target ~/selection \
     --selection -
 ```
+
+Whichever it is, the dialog shows **every** command you have to run, numbered.
 
 On Windows the clipboard command is `powershell -Command Get-Clipboard`; the
 dialog prints the right one for your system. `--selection FILE` also accepts a

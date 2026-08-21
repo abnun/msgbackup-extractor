@@ -1567,3 +1567,39 @@ Begründung falsch — vorher bei den unscharfen Kacheln, wo die Messgröße nic
 stimmte. Beide Male lag es daran, dass ich von einer belegten Aussage („JS darf
 die Bytes nicht lesen") auf eine breitere geschlossen habe („der Browser darf
 nicht") ohne den neuen Fall zu prüfen.
+
+### 31.5 Nachtrag: die Pfade in den Befehl, und was das aufdeckte
+
+Die Frage war, warum die Auswahlliste nicht gleich im Befehl stehen kann. Sie
+kann — für kleine Auswahlen —, und `collect` nimmt jetzt Pfade als Argument.
+Die Grenze ist die Länge einer Befehlszeile: `cmd.exe` bricht bei 8191 Zeichen
+ab, `ARG_MAX` liegt anderswo bei einem Megabyte, und beides gehört als
+`platforms.command_line_budget()` an die eine Stelle, an der Plattformwissen
+steht.
+
+**Die Anleitung muss vollständig sein.** Ein Dialog, der bei einer großen
+Auswahl nur „passt nicht" sagt, ist keine Anleitung. Er verteilt sie jetzt auf
+mehrere Aufrufe und zeigt **jeden** davon, nummeriert. Erst über acht Befehle
+wird es unzumutbar, und dann kommt der Listenweg — der ebenfalls als nummerierte
+Schritte dasteht. Der hervorgehobene Knopf ist immer Schritt 1: im Listenweg
+also „Liste kopieren", nicht „Befehl kopieren".
+
+**Dabei fiel ein Fehler auf, den es vorher schon gab.** `collect` war nicht
+wiederholbar: `_unique` begann pro Lauf mit einer leeren Menge belegter Namen.
+Zwei Läufe in dasselbe Ziel, beide mit einer Datei namens `IMG_0001.jpg` — der
+zweite überschrieb die erste. Ohne Batching fiel das nie auf, weil niemand
+zweimal sammelte. Mit Batching wäre es der Regelfall geworden.
+
+Behoben, indem die Menge mit dem gefüllt wird, was im Ziel schon liegt. Dazu
+eine Ausnahme: liegt unter dem Namen bereits **dieselbe** Datei — bei Hardlinks
+derselbe Inode, geprüft mit `os.path.samefile` —, dann ist sie eingesammelt und
+wird nicht zu einer Kopie mit Suffix.
+
+**Ein bestehender Test kodierte dabei die falsche Annahme.** Er wählte
+absichtlich den Medienpfad und die Chat-Verknüpfung derselben Datei und
+verlangte zwei Ziele, „damit der zweite den ersten nicht ersetzt". Aber es sind
+derselbe Inode: es ging nie etwas verloren, es entstand nur eine zweite Kopie
+desselben Inhalts. Die Eigenschaft, auf die es ankommt, ist „keine
+*verschiedene* Datei geht verloren" — und die hat jetzt ihren eigenen Test, mit
+zwei tatsächlich verschiedenen Dateien gleichen Namens. Dazu zwei Tests für die
+Wiederholbarkeit.

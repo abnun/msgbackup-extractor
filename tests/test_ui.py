@@ -335,11 +335,33 @@ def test_page_offers_selection_and_handover(export_dir: Path) -> None:
     """Die Seite muss Auswahl, Sammelleiste und Uebergabedialog enthalten."""
     html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
     for element in ('id="tray"', 'id="tray-all"', 'id="tray-clear"', 'id="tray-hand"',
-                    'id="hand"', 'id="hand-list"', 'id="hand-cmd"', 'id="v-pick"'):
+                    'id="hand"', 'id="hand-steps"', 'id="v-pick"'):
         assert element in html, f"{element} fehlt"
-    # Der Auswahlknopf entsteht im JavaScript, nicht als Markup.
+    # Auswahlknopf und Schrittinhalte entstehen im JavaScript, nicht als Markup.
     assert 'pick.className = "pick"' in html
     assert ".pick {" in html
+    assert 'ta.id = "hand-list"' in html
+
+
+def test_the_handover_is_always_a_complete_set_of_steps(export_dir: Path) -> None:
+    """Der Dialog muss jeden auszufuehrenden Befehl zeigen.
+
+    Passt die Auswahl nicht in eine Befehlszeile, wird sie auf mehrere Aufrufe
+    verteilt - und dann muessen alle dastehen, nummeriert. Erst wenn selbst das
+    unzumutbar viele werden, kommt die Liste ueber die Standardeingabe.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    for stueck in ("function batches(", "function planFor(", "function renderPlan(",
+                   "MAX_BEFEHLE", "Schritt ${nummer}"):
+        assert stueck in html, f"{stueck} fehlt"
+
+
+def test_the_page_knows_the_command_line_budget(export_dir: Path) -> None:
+    """Ohne die Grenze koennte die Seite keinen Befehl bauen, der sicher passt."""
+    index = _index(export_dir)
+    assert isinstance(index["cmdmax"], int)
+    assert index["cmdmax"] > 1000
+    assert "DATA.cmdmax" in write_page(index, export_dir).read_text(encoding="utf-8")
 
 
 def test_page_does_not_promise_a_browser_download(export_dir: Path) -> None:
