@@ -327,6 +327,17 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
   background: var(--accent-soft, transparent);
 }
 .hand .hand-scope p { margin: 0 0 9px; color: var(--text); font-size: 13px; }
+.hand dl.hand-legend {
+  margin: 4px 0 16px; padding: 11px 13px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel-2); font-size: 12.5px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px;
+}
+.hand dl.hand-legend dt { margin: 0; }
+.hand dl.hand-legend dd { margin: 0; color: var(--muted); }
+.hand dl.hand-legend code {
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 .hand p.hand-plan {
   margin: 0 0 10px; font-size: 12px; font-weight: 650;
   text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
@@ -447,9 +458,16 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
     und „Bild speichern unter…". Das ist eine Funktion des Browsers und geht an
     der Sperre vorbei.</p>
     <div id="hand-steps"></div>
+    <dl class="hand-legend">
+      <dt><code>--output</code></dt>
+      <dd>Das Exportverzeichnis, aus dem gesammelt wird — dort liegt das
+      Export-Manifest. Steht schon richtig drin, nichts zu tun.</dd>
+      <dt><code>--target</code></dt>
+      <dd>Wohin die Auswahl kopiert wird. <strong>Das darfst du ändern</strong>,
+      wenn du sie woanders haben willst. Das Verzeichnis wird angelegt und muss
+      außerhalb des Exports liegen.</dd>
+    </dl>
     <div class="actions">
-      <button type="button" class="primary" id="hand-copy-cmd">Befehl kopieren</button>
-      <button type="button" id="hand-copy" hidden>Liste kopieren</button>
       <span class="said" id="hand-said"></span>
       <span class="spacer"></span>
       <button type="button" id="hand-close">Schließen</button>
@@ -1299,7 +1317,7 @@ const DATA = /*__INDEX__*/;
     if (e.key === " ") { e.preventDefault(); if (position >= 0) choose(position, false); }
   });
 
-  /* --- Uebergabe an die CLI --------------------------------------------- */
+  /* --- Uebergabe an das Kommandozeilenprogramm --------------------------------------------- */
 
   // Das Exportverzeichnis steht im eigenen Pfad. Die Seite liegt darin, also
   // ist es einfach das Elternverzeichnis von index.html.
@@ -1449,12 +1467,6 @@ const DATA = /*__INDEX__*/;
     }
   }
 
-  function alleBefehle() {
-    return Array.from(document.querySelectorAll("#hand-steps pre"))
-      .map((p) => p.textContent)
-      .join("\n");
-  }
-
   function say(text) {
     const said = document.getElementById("hand-said");
     said.textContent = text;
@@ -1495,7 +1507,8 @@ const DATA = /*__INDEX__*/;
       `${num(chosen.length)} ${eine ? "Datei" : "Dateien"}, ` +
       `${size(chosen.reduce((a, it) => a + (it.s || 0), 0))}. ` +
       "Aus einer lokal geoeffneten Seite laedt der Browser nichts herunter — " +
-      "ohne Fehlermeldung, es passiert einfach nichts. Deshalb sammelt die CLI ein.";
+      "ohne Fehlermeldung, es passiert einfach nichts. Deshalb sammelt das " +
+      "Kommandozeilenprogramm (CLI) sie ein.";
     document.getElementById("hand-single").hidden = !eine;
 
     // Die Auswahl ist filterunabhaengig - das ist Absicht, damit man ueber
@@ -1513,34 +1526,11 @@ const DATA = /*__INDEX__*/;
 
     const plan = planFor(chosen);
     renderPlan(plan, chosen);
-    const mehrere = plan.commands.length > 1;
-    const cmdKnopf = document.getElementById("hand-copy-cmd");
-    const listeKnopf = document.getElementById("hand-copy");
-    cmdKnopf.textContent = mehrere ? "Alle Befehle kopieren" : "Befehl kopieren";
-    listeKnopf.hidden = !plan.list;
-    // Hervorgehoben ist, was Schritt 1 ist. Im Listenweg ist das die Liste.
-    cmdKnopf.classList.toggle("primary", !plan.list);
-    listeKnopf.classList.toggle("primary", !!plan.list);
-    if (plan.list) {
-      // Reihenfolge im Dialog an die Reihenfolge der Schritte anpassen.
-      listeKnopf.parentNode.insertBefore(listeKnopf, cmdKnopf);
-    } else {
-      cmdKnopf.parentNode.insertBefore(cmdKnopf, listeKnopf);
-    }
     document.getElementById("hand-said").textContent = "";
     hand.showModal();
     // Sonst oeffnet der Dialog dort, wo er beim letzten Mal stand - bei einer
     // langen Anleitung also am Ende.
     hand.scrollTop = 0;
-  });
-  document.getElementById("hand-copy").addEventListener("click", () => {
-    const liste = document.getElementById("hand-list");
-    if (liste) toClipboard(liste.value, "Liste");
-  });
-  document.getElementById("hand-copy-cmd").addEventListener("click", () => {
-    // Genau das kopieren, was dasteht - nicht neu bauen. Sonst koennen
-    // Anzeige und Zwischenablage auseinanderlaufen.
-    toClipboard(alleBefehle(), "Befehl");
   });
   document.getElementById("hand-close").addEventListener("click", () => hand.close());
   hand.addEventListener("click", (e) => { if (e.target === hand) hand.close(); });

@@ -353,7 +353,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Traegt ausgewaehlte Dateien zusammen. Die Auswahl kommt aus der "
             "lokalen Ansicht (msgx ui): aus einer als Datei geoeffneten Seite "
             "laedt der Browser nichts herunter - gemessen, ohne Fehlermeldung -, "
-            "deshalb sammelt die CLI sie ein."
+            "deshalb sammelt das Kommandozeilenprogramm (CLI) sie ein."
         ),
         epilog=(
             "Beispiel mit der Zwischenablage:\n"
