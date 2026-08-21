@@ -891,3 +891,41 @@ def test_the_browser_copy_states_what_it_cannot_do(export_dir: Path) -> None:
     assert "in eine Cloud synchronisiert, kann hier niemand prüfen" in html
     # Und der Weg ueber die Kommandozeile bleibt sichtbar daneben stehen.
     assert "Oder über die Kommandozeile" in html
+
+
+def test_building_the_overview_also_refreshes_the_export_pages(
+    export_dir: Path, tmp_path: Path
+) -> None:
+    """Sonst tragen die Einzelseiten nach einer Aenderung den alten Stand.
+
+    Genau das ist passiert: die Uebersicht hatte den neuen Kopierweg, die
+    Einzelseiten nicht - und verhielten sich anders. Eine stille Abweichung.
+    """
+    from msgbackup_extractor.cli import main
+
+    # Eine Einzelseite anlegen, damit sie erneuert werden kann.
+    assert main(["ui", "--output", str(export_dir)]) == 0
+    seite = export_dir / "index.html"
+    original = seite.read_text(encoding="utf-8")
+    seite.write_text(
+        original.replace("<body>", "<body><!-- veralteter Stand -->", 1), encoding="utf-8"
+    )
+
+    # Die Uebersicht im Elternverzeichnis bauen.
+    assert main(["ui", "--output", str(export_dir.parent)]) == 0
+
+    assert "veralteter Stand" not in seite.read_text(encoding="utf-8")
+
+
+def test_a_foreign_page_inside_the_output_is_left_alone(
+    export_dir: Path,
+) -> None:
+    """Eine fremde index.html zu ersetzen waere Datenverlust."""
+    from msgbackup_extractor.cli import main
+
+    fremd = "<html><body>von Hand geschrieben</body></html>"
+    (export_dir / "index.html").write_text(fremd, encoding="utf-8")
+
+    assert main(["ui", "--output", str(export_dir.parent)]) == 0
+
+    assert (export_dir / "index.html").read_text(encoding="utf-8") == fremd

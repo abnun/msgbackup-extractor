@@ -1807,3 +1807,29 @@ Dateien nur nach Größe verglichen werden.
 **Was bleibt.** Firefox und Safari haben `showDirectoryPicker` nicht. Der
 Kommandozeilenweg ist deshalb kein Altlast-Zweig, sondern der verlässliche, und
 steht im Dialog gleichberechtigt darunter.
+
+### 32.6 Zwei Fehler, die der erste echte Klick zeigte
+
+**Die Seite wusste, welchen Ordner sie braucht, und sagte es nicht.** Beim
+Freigeben wurde `threema` gewählt, gebraucht war `export` — die gemeinsame
+Ansicht sucht die Manifeste *innerhalb* des freigegebenen Ordners. Die Meldung
+lautete nur „Kein Manifest gefunden", also allgemein statt hilfreich.
+
+Dabei kennt die Seite ihren eigenen Pfad: `location.pathname` liefert auf
+`file://` den absoluten Pfad, und daraus den Namen des Ordners, in dem sie
+liegt. Jetzt steht er auf dem Knopf („Ordner ‚export' freigeben"), und bei einer
+Fehlwahl sagt die Meldung, was falsch ist: „‚threema' ist eine Ebene zu tief.
+Gebraucht wird ‚export' — der Ordner, der threema und whatsapp enthält."
+
+**`msgx ui` auf das Elternverzeichnis erneuerte nur die Übersicht.** Die
+Einzelseiten der Exporte behielten den alten Stand und verhielten sich anders —
+genau die stille Abweichung, die dieses Projekt sonst vermeidet. Aufgefallen ist
+es, weil der neue Kopierweg auf der Übersicht war und auf der Threema-Seite
+nicht.
+
+Behoben: die Übersicht zieht die Einzelseiten mit, weil sie **innerhalb** von
+`--output` liegen und damit von der Zusage gedeckt sind. Zwei Grenzen bleiben:
+nur vorhandene Seiten werden erneuert — eine neue anzulegen wäre eine andere
+Absicht als „aktualisieren" —, und nur eigene, entschieden über die
+Erzeugerkennung im Dateikopf. Eine fremde `index.html` zu ersetzen wäre
+Datenverlust; ein Test hält beides fest.

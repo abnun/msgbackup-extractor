@@ -54,6 +54,7 @@ from msgbackup_extractor.extraction import ExtractionBlocked, Extractor
 from msgbackup_extractor.models import MediaCategory
 from msgbackup_extractor.ui.builder import (
     PAGE_NAME,
+    ExportRef,
     UiBuildError,
     build_combined_index,
     build_index,
@@ -847,7 +848,32 @@ def _refresh_ui_after_extract(output_dir: Path) -> None:
             )
 
 
+def _refresh_export_pages(exports: Sequence[ExportRef]) -> list[Path]:
+    """Schreibt die Seite jedes Exports neu, sofern sie schon von uns stammt.
+
+    Nur vorhandene Seiten: eine neue anzulegen waere eine andere Absicht als
+    "aktualisieren". Und nur eigene: eine fremde `index.html` zu ersetzen waere
+    Datenverlust, deshalb entscheidet die Erzeugerkennung im Dateikopf.
+    """
+    geschrieben: list[Path] = []
+    for ref in exports:
+        seite = ref.manifest_path.parent / "index.html"
+        if not seite.is_file() or not is_generated_page(seite):
+            continue
+        try:
+            manifest = export_manifest.load(ref.manifest_path)
+            index = build_index(manifest, raw=load_raw_manifest(ref.manifest_path))
+            geschrieben.append(write_page(index, manifest.output_dir))
+        except (UiBuildError, InvalidManifest) as error:
+            print(
+                f"Warnung: Seite von {ref.label} nicht erneuert ({error}).",
+                file=sys.stderr,
+            )
+    return geschrieben
+
+
 def _command_ui(arguments: argparse.Namespace) -> int:
+    mitgezogen: list[Path] = []
     path = arguments.output.expanduser()
     single = path / export_manifest.MANIFEST_NAME if path.is_dir() else path
 
@@ -869,6 +895,12 @@ def _command_ui(arguments: argparse.Namespace) -> int:
                 exports, export_manifest.load, load_raw_manifest
             )
             target_dir = path
+            # Die Einzelseiten der Exporte liegen INNERHALB von --output und
+            # gehoeren mitaktualisiert. Sonst tragen sie nach einer Aenderung
+            # der Vorlage weiter den alten Stand und verhalten sich anders als
+            # die Uebersicht - genau die Art stiller Abweichung, die dieses
+            # Programm sonst vermeidet.
+            mitgezogen = _refresh_export_pages(exports)
     except (UiBuildError, InvalidManifest) as error:
         print(f"Fehler: {error}", file=sys.stderr)
         return EXIT_ERROR
@@ -878,6 +910,8 @@ def _command_ui(arguments: argparse.Namespace) -> int:
 
     lines = ["Lokale Ansicht erzeugt", "=" * len("Lokale Ansicht erzeugt"), ""]
     lines.append(f"Datei:              {target}")
+    for pfad in mitgezogen:
+        lines.append(f"  mitaktualisiert:  {pfad}")
     for source in index.get("sources", ()):
         lines.append(
             f"  {source['label']:<16} {reports.format_count(source['entries']):>9} Medien"

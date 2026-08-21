@@ -1390,6 +1390,13 @@ const DATA = /*__INDEX__*/;
      dem Manifest, die geschriebene Datei wird zurueckgelesen und verglichen.
      -------------------------------------------------------------------- */
 
+  //: Name des Ordners, in dem diese Seite liegt. Genau der muss freigegeben
+  //: werden - alles andere findet die Manifeste nicht.
+  function erwarteterOrdner() {
+    const teile = decodeURIComponent(location.pathname).split("/").filter(Boolean);
+    return teile.length > 1 ? teile[teile.length - 2] : "";
+  }
+
   const HD = {
     moeglich: typeof window.showDirectoryPicker === "function",
     exportDir: null,
@@ -1445,17 +1452,37 @@ const DATA = /*__INDEX__*/;
   }
 
   document.getElementById("hd-export").addEventListener("click", async () => {
+    const soll = erwarteterOrdner();
+    let gewaehlt = null;
     try {
-      HD.exportDir = await window.showDirectoryPicker({ id: "msgx-export", mode: "read" });
-      HD.hashes = await hashKarteLaden(HD.exportDir);
+      gewaehlt = await window.showDirectoryPicker({ id: "msgx-export", mode: "read" });
+    } catch {
+      hdStand("hd-export-state", "abgebrochen", "bad");
+      return;
+    }
+    // Den Namen zuerst pruefen: so kann die Meldung sagen, WAS falsch ist,
+    // statt nur dass etwas fehlt.
+    if (soll && gewaehlt.name !== soll) {
+      const mehrere = DATA.sources && DATA.sources.length > 1;
+      HD.exportDir = null;
+      HD.hashes = null;
       hdStand("hd-export-state",
-        `„${HD.exportDir.name}“ · ${num(HD.hashes.size)} Prüfsummen gelesen`, "ok");
+        `„${gewaehlt.name}“ ist eine Ebene zu tief. Gebraucht wird „${soll}“` +
+        (mehrere ? ` — der Ordner, der ${DATA.sources.map((s) => s.directory).join(" und ")} enthält.` : "."),
+        "bad");
+      hdBereit();
+      return;
+    }
+    try {
+      HD.hashes = await hashKarteLaden(gewaehlt);
+      HD.exportDir = gewaehlt;
+      hdStand("hd-export-state",
+        `„${gewaehlt.name}“ · ${num(HD.hashes.size)} Prüfsummen gelesen`, "ok");
     } catch (e) {
       HD.exportDir = null;
       HD.hashes = null;
       hdStand("hd-export-state",
-        e.name === "AbortError" ? "abgebrochen"
-          : "Kein Manifest gefunden — bitte den Ordner mit dieser Seite wählen.", "bad");
+        `In „${gewaehlt.name}“ fehlt eine export-manifest.json (${e.name}).`, "bad");
     }
     hdBereit();
   });
@@ -1855,6 +1882,10 @@ const DATA = /*__INDEX__*/;
         `(${size(bytes)} zusätzlich — per Hardlink wären es 0 Bytes), und ob der ` +
         `Zielordner in eine Cloud synchronisiert, kann hier niemand prüfen: der ` +
         `Browser gibt den Ort eines Ordners nicht heraus. Wähle einen lokalen.`;
+      const soll = erwarteterOrdner();
+      document.getElementById("hd-export").textContent = soll
+        ? `1 · Ordner „${soll}“ freigeben …`
+        : "1 · Exportordner freigeben …";
       document.getElementById("hd-progress").textContent = "";
       document.getElementById("hd-result").replaceChildren();
       hdBereit();
