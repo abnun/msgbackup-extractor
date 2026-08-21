@@ -471,8 +471,11 @@ Ein Test prüft die Seite auf Netzverweise.
 - **Einzelansicht** mit Original, Videoplayer, Metadaten und
   Tastaturnavigation (`←` `→` blättern, `Leertaste` auswählen, `Esc` schließen)
 - **Auswahl** über ein Häkchen je Kachel, Shift für einen Bereich und „alle im
-  Filter auswählen" für den aktiven Filter. Die Auswahl wird über den Pfad
-  gehalten und übersteht damit einen Filterwechsel.
+  Filter auswählen" für den aktiven Filter. Übernommen wird, was du siehst: die
+  Auswahl *innerhalb des aktuellen Filters*. Was du vorher ausgewählt hast und
+  was jetzt verdeckt ist, bleibt ausgewählt — die Leiste sagt, wie viel —, ist
+  aber nicht Teil der Befehle, bis du den Filter wieder weitest. Die Zahl auf
+  dem Schirm stimmt damit immer mit den Häkchen überein.
 
 Drei bewusste Entscheidungen:
 

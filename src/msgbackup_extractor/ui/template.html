@@ -321,6 +321,12 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
   text-transform: none; letter-spacing: 0; color: var(--text);
 }
 .hand p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+.hand .hand-scope {
+  border: 1px solid var(--accent); border-radius: 9px;
+  padding: 11px 13px; margin: 0 0 16px;
+  background: var(--accent-soft, transparent);
+}
+.hand .hand-scope p { margin: 0 0 9px; color: var(--text); font-size: 13px; }
 .hand p.hand-plan {
   margin: 0 0 10px; font-size: 12px; font-weight: 650;
   text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
@@ -433,6 +439,9 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
   <div class="hand">
     <h2>Auswahl herunterladen</h2>
     <p id="hand-intro"></p>
+    <div id="hand-scope" class="hand-scope" hidden>
+      <p id="hand-scope-text"></p>
+    </div>
     <p id="hand-single" class="hand-single" hidden>Für <strong>eine einzelne
     Datei</strong> geht es kürzer: in der Einzelansicht Rechtsklick auf das Bild
     und „Bild speichern unter…". Das ist eine Funktion des Browsers und geht an
@@ -984,9 +993,25 @@ const DATA = /*__INDEX__*/;
     if (viewer.open) syncViewerPick();
   }
 
+  /* Was uebernommen wird, ist das Ausgewaehlte IM AKTUELLEN FILTER - also
+     genau das, was man auf dem Schirm angehakt sieht. Alles andere zaehlt
+     nicht mit, wird aber auch nicht weggeworfen: wer in der Suche etwas
+     nachtraegt und die Suche dann leert, findet seine frueheren Haken wieder.
+
+     Frueher zaehlte hier die gesamte Auswahl. Dann stand "35.709 ausgewaehlt"
+     unter einer Ansicht mit 705 Haken, und der Uebergabedialog baute Befehle
+     fuer Dateien, die niemand sah. */
   function selectedItems() {
     // Reihenfolge wie im Index, damit die Liste nachvollziehbar bleibt.
-    return items.filter((it) => selected.has(it.p));
+    return filtered.filter((it) => selected.has(it.p));
+  }
+
+  //: Ausgewaehlt, aber vom Filter gerade verdeckt.
+  function hiddenSelectedCount() {
+    const sichtbar = new Set(filtered.map((it) => it.p));
+    let n = 0;
+    for (const pfad of selected) if (!sichtbar.has(pfad)) n += 1;
+    return n;
   }
 
   function renderTray() {
@@ -1003,8 +1028,11 @@ const DATA = /*__INDEX__*/;
     const label = document.getElementById("tray-filter");
     if (active) {
       label.hidden = false;
-      label.textContent = filterLabel();
-      label.title = filterLabel();
+      // "Filter:" davor, weil das Abzeichen sonst direkt neben der Zahl
+      // steht und sich liest wie "35.709 aus 2025" - obwohl die Auswahl
+      // filterunabhaengig ist.
+      label.textContent = `Filter: ${filterLabel()}`;
+      label.title = `Aktiver Filter: ${filterLabel()}`;
     } else {
       label.hidden = true;
     }
@@ -1013,7 +1041,11 @@ const DATA = /*__INDEX__*/;
     const sub = document.getElementById("tray-size");
     if (chosen.length) {
       count.textContent = `${num(chosen.length)} ausgewählt`;
-      sub.textContent = size(chosen.reduce((a, it) => a + (it.s || 0), 0));
+      const groesse = size(chosen.reduce((a, it) => a + (it.s || 0), 0));
+      const verdeckt = hiddenSelectedCount();
+      sub.textContent = verdeckt > 0
+        ? `${groesse} · ${num(verdeckt)} weitere sind vom Filter verdeckt`
+        : groesse;
     } else {
       count.textContent = `${num(filtered.length)} im Filter`;
       sub.textContent =
@@ -1465,6 +1497,19 @@ const DATA = /*__INDEX__*/;
       "Aus einer lokal geoeffneten Seite laedt der Browser nichts herunter — " +
       "ohne Fehlermeldung, es passiert einfach nichts. Deshalb sammelt die CLI ein.";
     document.getElementById("hand-single").hidden = !eine;
+
+    // Die Auswahl ist filterunabhaengig - das ist Absicht, damit man ueber
+    // mehrere Filter hinweg sammeln kann. Nur muss man es dann auch sagen,
+    // sonst widerspricht die Zahl dem, was auf dem Schirm steht.
+    const verdeckt = hiddenSelectedCount();
+    const scope = document.getElementById("hand-scope");
+    scope.hidden = verdeckt === 0;
+    if (!scope.hidden) {
+      document.getElementById("hand-scope-text").textContent =
+        `Hier stehen nur die ${num(chosen.length)} aus dem aktuellen Filter. ` +
+        `${num(verdeckt)} weitere sind noch ausgewählt, aber gerade verdeckt — ` +
+        `sie bleiben erhalten. Filter aufheben, um sie mitzunehmen.`;
+    }
 
     const plan = planFor(chosen);
     renderPlan(plan, chosen);

@@ -457,8 +457,11 @@ network references.
 - **Single view** with the original, a video player, metadata and keyboard
   navigation (`←` `→` browse, `Space` select, `Esc` close)
 - **Selection** via a checkmark per tile, Shift for a range, and "select all in
-  filter" for the active filter. Selection is kept by path, so it survives a
-  filter change.
+  filter" for the active filter. What gets handed over is what you can see: the
+  selection *inside the current filter*. Anything selected earlier and now
+  hidden stays selected — the tray says how much — but it is not part of the
+  commands until you widen the filter again. The count on screen therefore
+  always matches the checkmarks.
 
 Three deliberate decisions:
 

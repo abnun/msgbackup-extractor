@@ -1603,3 +1603,41 @@ desselben Inhalts. Die Eigenschaft, auf die es ankommt, ist „keine
 *verschiedene* Datei geht verloren" — und die hat jetzt ihren eigenen Test, mit
 zwei tatsächlich verschiedenen Dateien gleichen Namens. Dazu zwei Tests für die
 Wiederholbarkeit.
+
+### 22.6 Nachtrag: übernommen wird, was man sieht
+
+§22.2 hielt fest, die Auswahl werde über den Pfad gehalten und überstehe damit
+einen Filterwechsel. Das war als Merkmal gedacht und wurde in der Benutzung zum
+Fehler.
+
+Der berichtete Ablauf: alles auswählen, dann auf ein Jahr einschränken. Danach
+stand in der Leiste die volle Zahl, während auf dem Schirm nur die Häkchen des
+Jahres zu sehen waren — und der Übergabedialog baute Befehle für Dateien, die
+niemand sah. Nachgemessen, Schritt für Schritt: nach dem Einschränken „35.709
+ausgewählt" bei 1.728 sichtbaren Kacheln. Arithmetisch richtig, denn
+„Auswahl im Filter aufheben" schaltet nur den Filterinhalt um. Als Anzeige
+falsch, weil die Zahl dem widersprach, was daneben stand.
+
+**Erster Versuch, und warum er nicht genügte.** Ich habe die Aufteilung
+benannt („1.728 hier sichtbar, 33.981 außerhalb") und einen Knopf „Auf Filter
+beschränken" ergänzt. Der Anwender hat das zurückgewiesen: „das würde jeder
+User so erwarten." Eine Erklärung, warum eine Zahl dem Schirm widerspricht, ist
+schlechter als eine Zahl, die es nicht tut.
+
+**Verworfen: beim Filterwechsel wegwerfen.** Naheliegend, aber schädlich. Man
+wählt fünf Bilder, tippt in die Suche, um ein sechstes zu finden — und die fünf
+sind weg, weil sie kurz nicht sichtbar waren.
+
+**Umgesetzt: `selectedItems()` schneidet mit dem Filter.** Eine Zeile an der
+einen Stelle, durch die alles läuft. Damit gilt überall dasselbe:
+
+* Die Leiste zählt, was angehakt zu sehen ist.
+* Der Dialog nimmt genau diese Dateien und baut die Befehle dafür — bei 1.728
+  Dateien also zwei statt vier.
+* Nichts wird verworfen. Verdeckte Auswahl bleibt bestehen, und die Leiste sagt
+  es: „33.981 weitere sind vom Filter verdeckt".
+
+Der Preis: über mehrere Filter hinweg zu sammeln und dann alles zusammen zu
+übernehmen geht nicht mehr in einem Schritt — man muss den Filter vorher
+weiten. Das ist der seltenere Fall und war die falsche Seite, auf der man
+irren kann.
