@@ -310,6 +310,9 @@ main { padding-bottom: 80px; }
 dialog#hand {
   width: min(94vw, 780px); padding: 0; border: 0; border-radius: 14px;
   background: var(--panel); color: var(--text); box-shadow: var(--shadow);
+  /* Ohne Deckel waechst der Dialog mit dem Inhalt ueber den Schirm hinaus -
+     und oeffnet dann am Ende statt am Anfang. */
+  max-height: 88vh; overflow-y: auto;
 }
 dialog#hand::backdrop { background: rgba(0,0,0,.6); }
 .hand { padding: 20px 22px 18px; }
@@ -318,6 +321,31 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
   text-transform: none; letter-spacing: 0; color: var(--text);
 }
 .hand p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+.hand p.hand-plan {
+  margin: 0 0 10px; font-size: 12px; font-weight: 650;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+}
+.hand details.step {
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel-2); margin: 0 0 6px;
+}
+.hand details.step > summary {
+  cursor: pointer; padding: 9px 12px; font-size: 13px; font-weight: 600;
+  list-style: none;
+}
+.hand details.step > summary::-webkit-details-marker { display: none; }
+.hand details.step > summary::before {
+  content: "▸"; display: inline-block; width: 1.1em; color: var(--muted);
+}
+.hand details.step[open] > summary::before { content: "▾"; }
+.hand details.step > pre,
+.hand details.step > textarea {
+  margin: 0; border: 0; border-top: 1px solid var(--line);
+  border-radius: 0 0 8px 8px; background: transparent;
+}
+.hand .stepcopy {
+  margin: 0 0 18px; display: flex; gap: 8px; align-items: center;
+}
 .hand p.hand-note {
   margin: 6px 0 14px; color: var(--muted); font-size: 12.5px;
 }
@@ -326,7 +354,7 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
   padding: 8px 0 8px 12px; margin-bottom: 16px; color: var(--text);
 }
 .hand pre {
-  margin: 0 0 8px; padding: 11px 13px; overflow-x: auto;
+  margin: 0 0 8px; padding: 11px 13px; overflow: auto; max-height: 38vh;
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px;
   font-size: 12px; line-height: 1.6; white-space: pre; -webkit-user-select: all;
   user-select: all;
@@ -1297,49 +1325,86 @@ const DATA = /*__INDEX__*/;
     const gruppen = batches(chosen);
     if (gruppen.length <= MAX_BEFEHLE) {
       return {
-        kind: gruppen.length === 1 ? "einer" : "mehrere",
         commands: gruppen.map(befehlFuer),
-        list: null,
+        groups: gruppen,
+        list: false,
       };
     }
-    return { kind: "liste", commands: [listenBefehl()], list: true };
+    return { commands: [listenBefehl()], groups: [], list: true };
+  }
+
+  /* Ein Schritt: zugeklappter Titel, darin der Befehl, darunter der
+     Kopierknopf. Der Knopf steht ABSICHTLICH ausserhalb des Faltblocks -
+     man soll einen Befehl kopieren koennen, ohne ihn erst aufklappen zu
+     muessen. */
+  function stepBlock(titel, zusatz, inhalt, kopieren, knopfText) {
+    const box = document.getElementById("hand-steps");
+    const details = document.createElement("details");
+    details.className = "step";
+    const summary = document.createElement("summary");
+    summary.textContent = zusatz ? `${titel} · ${zusatz}` : titel;
+    details.appendChild(summary);
+    details.appendChild(inhalt);
+    box.appendChild(details);
+
+    const zeile = document.createElement("div");
+    zeile.className = "stepcopy";
+    const knopf = document.createElement("button");
+    knopf.type = "button";
+    knopf.textContent = knopfText;
+    knopf.addEventListener("click", async () => {
+      const ok = await toClipboard(kopieren(), knopfText);
+      const vorher = knopf.textContent;
+      knopf.textContent = ok ? "Kopiert ✓" : "Bitte von Hand kopieren";
+      if (!ok) details.open = true;
+      setTimeout(() => { knopf.textContent = vorher; }, 2200);
+    });
+    zeile.appendChild(knopf);
+    box.appendChild(zeile);
+    return details;
   }
 
   function renderPlan(plan, chosen) {
     const box = document.getElementById("hand-steps");
     box.replaceChildren();
+
+    // Die Zahl der Schritte gehoert ueber die Schritte, nicht dazwischen -
+    // sonst muss man zaehlen.
+    const anzahl = plan.list ? 2 : plan.commands.length;
+    const kopf = document.createElement("p");
+    kopf.className = "hand-plan";
+    kopf.textContent = anzahl === 1
+      ? "Ein Schritt:"
+      : `${num(anzahl)} Schritte, der Reihe nach:`;
+    box.appendChild(kopf);
+
     let nummer = 0;
-    const schritt = (titel) => {
-      nummer += 1;
-      const h = document.createElement("h3");
-      h.textContent = `Schritt ${nummer} — ${titel}`;
-      box.appendChild(h);
-    };
+    const titel = (was) => `Schritt ${++nummer} — ${was}`;
 
     if (plan.list) {
-      schritt("Liste kopieren");
       const ta = document.createElement("textarea");
       ta.id = "hand-list";
       ta.readOnly = true;
       ta.spellcheck = false;
       ta.value = chosen.map((it) => it.p).join("\n") + "\n";
-      box.appendChild(ta);
-      schritt("im Terminal einsammeln");
+      stepBlock(titel("Liste kopieren"), `${num(chosen.length)} Pfade`, ta,
+                () => ta.value, "Liste kopieren");
+
       const pre = document.createElement("pre");
       pre.textContent = plan.commands[0];
-      box.appendChild(pre);
+      stepBlock(titel("im Terminal einsammeln"), null, pre,
+                () => pre.textContent, "Befehl kopieren");
       return;
     }
 
     plan.commands.forEach((befehl, i) => {
-      schritt(
-        plan.commands.length === 1
-          ? "im Terminal ausführen"
-          : `im Terminal ausführen (${i + 1} von ${plan.commands.length})`
-      );
       const pre = document.createElement("pre");
       pre.textContent = befehl;
-      box.appendChild(pre);
+      const wie = plan.commands.length === 1
+        ? "im Terminal ausführen"
+        : `im Terminal ausführen (${i + 1} von ${plan.commands.length})`;
+      stepBlock(titel(wie), `${num(plan.groups[i].length)} Pfade`, pre,
+                () => pre.textContent, "Befehl kopieren");
     });
     if (plan.commands.length > 1) {
       const hinweis = document.createElement("p");
@@ -1348,7 +1413,7 @@ const DATA = /*__INDEX__*/;
         "So viele Pfade passen nicht in eine einzige Befehlszeile. Die Befehle " +
         "gehen nacheinander in dasselbe Zielverzeichnis; du kannst sie auch " +
         "zusammen einfügen.";
-      box.appendChild(hinweis);
+      document.getElementById("hand-steps").appendChild(hinweis);
     }
   }
 
@@ -1368,14 +1433,18 @@ const DATA = /*__INDEX__*/;
     try {
       await navigator.clipboard.writeText(text);
       say(label + " kopiert");
-      return;
+      return true;
     } catch {
-      // Ohne Zwischenablage-Recht bleibt die Auswahl im Textfeld - von dort
-      // laesst sich immer von Hand kopieren.
+      // Ohne Zwischenablage-Recht muss von Hand kopiert werden. Ein Textfeld
+      // gibt es nur im Listenweg - im Direktmodus steht der Befehl in einem
+      // <pre>, das per CSS vollstaendig markierbar ist.
       const box = document.getElementById("hand-list");
-      box.focus();
-      box.select();
-      say("Bitte mit ⌘C kopieren");
+      if (box) {
+        box.focus();
+        box.select();
+      }
+      say("Bitte von Hand markieren und mit ⌘C kopieren");
+      return false;
     }
   }
 
@@ -1415,6 +1484,9 @@ const DATA = /*__INDEX__*/;
     }
     document.getElementById("hand-said").textContent = "";
     hand.showModal();
+    // Sonst oeffnet der Dialog dort, wo er beim letzten Mal stand - bei einer
+    // langen Anleitung also am Ende.
+    hand.scrollTop = 0;
   });
   document.getElementById("hand-copy").addEventListener("click", () => {
     const liste = document.getElementById("hand-list");

@@ -352,8 +352,16 @@ def test_the_handover_is_always_a_complete_set_of_steps(export_dir: Path) -> Non
     """
     html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
     for stueck in ("function batches(", "function planFor(", "function renderPlan(",
-                   "MAX_BEFEHLE", "Schritt ${nummer}"):
+                   "function stepBlock(", "MAX_BEFEHLE", "Schritt ${++nummer}"):
         assert stueck in html, f"{stueck} fehlt"
+    # Jeder Schritt ist zugeklappt und hat seinen eigenen Kopierknopf, damit
+    # man einen Befehl kopieren kann, ohne ihn erst aufzuklappen.
+    assert "details.step" in html
+    assert 'zeile.className = "stepcopy"' in html
+    # Die Zahl der Schritte steht ueber den Schritten.
+    assert "Schritte, der Reihe nach" in html
+    # Und der Dialog oeffnet oben, nicht dort, wo er zuletzt stand.
+    assert "hand.scrollTop = 0" in html
 
 
 def test_the_page_knows_the_command_line_budget(export_dir: Path) -> None:
