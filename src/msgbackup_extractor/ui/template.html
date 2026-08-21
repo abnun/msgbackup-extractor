@@ -1347,6 +1347,20 @@ const DATA = /*__INDEX__*/;
   }
   const shellQuote = (s) => "'" + s.replace(/'/g, "'\\''") + "'";
 
+  /* "Command Line Interface / CLI" mit fetten Anfangsbuchstaben - damit man
+     sieht, woher die Abkuerzung kommt, und sie danach ohne Erklaerung benutzt
+     werden kann. */
+  function abkuerzung() {
+    const teile = [];
+    for (const [fett, rest] of [["C", "ommand "], ["L", "ine "], ["I", "nterface"]]) {
+      const b = document.createElement("strong");
+      b.textContent = fett;
+      teile.push(b, document.createTextNode(rest));
+    }
+    teile.push(document.createTextNode(" / CLI"));
+    return teile;
+  }
+
   const ZIEL_STANDARD = "~/Auswahl";
 
   function zielWert() {
@@ -1542,12 +1556,20 @@ const DATA = /*__INDEX__*/;
     // (Kein literales Schema hier: die Seite darf keine URL enthalten, und ein
     // Test prueft genau das.)
     const eine = chosen.length === 1;
-    document.getElementById("hand-intro").textContent =
-      `${num(chosen.length)} ${eine ? "Datei" : "Dateien"}, ` +
-      `${size(chosen.reduce((a, it) => a + (it.s || 0), 0))}. ` +
-      "Aus einer lokal geoeffneten Seite laedt der Browser nichts herunter — " +
-      "ohne Fehlermeldung, es passiert einfach nichts. Deshalb sammelt das " +
-      "Kommandozeilenprogramm (CLI) sie ein.";
+    // Aus Knoten gebaut statt aus Text, weil die Klammer zeigen soll, WOHER
+    // die Abkuerzung kommt: die Anfangsbuchstaben stehen fett.
+    const intro = document.getElementById("hand-intro");
+    intro.replaceChildren(
+      document.createTextNode(
+        `${num(chosen.length)} ${eine ? "Datei" : "Dateien"}, ` +
+        `${size(chosen.reduce((a, it) => a + (it.s || 0), 0))}. ` +
+        "Aus einer lokal geöffneten Seite lädt der Browser nichts herunter — " +
+        "ohne Fehlermeldung, es passiert einfach nichts. Deshalb sammelt das " +
+        "Kommandozeilenprogramm ("
+      ),
+      ...abkuerzung(),
+      document.createTextNode(") sie ein.")
+    );
     document.getElementById("hand-single").hidden = !eine;
 
     // Die Auswahl ist filterunabhaengig - das ist Absicht, damit man ueber
