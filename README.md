@@ -524,7 +524,34 @@ text file with one relative path per line.
 | `--verify` | check each file's SHA-256 against the manifest |
 | `--dry-run` | show only what would be gathered |
 
-#### Why the browser cannot do this
+#### Copying without a terminal (Chrome and Edge)
+
+The dialog offers a second way: release two folders and the page copies the
+selection itself. Measured, not assumed — a page opened as a file **may** read
+and write, provided a human grants the folder. The lock covers automatic access,
+not granted access.
+
+It carries the same guarantee as `msgx collect --verify`: the SHA-256 comes from
+the manifest in the released folder, and the file that gets **read back from
+disk** is the one that is compared. Hashing the buffer it just wrote would be
+self-congratulation.
+
+Two things this way cannot do, and the dialog says both:
+
+- **No cloud guard.** `collect` refuses a target inside a synced folder. That
+  check needs the path, and a browser never hands one out — `FileSystemHandle`
+  has no path field. Pick a local folder.
+- **No hardlinks.** `collect` links and costs nothing extra; the page writes real
+  copies. The dialog names the exact number of bytes that will be duplicated.
+
+What it does share with the command line: it refuses a target inside the export
+(via `resolve()`), it never overwrites a different file of the same name, and
+running it twice creates no duplicates.
+
+Firefox and Safari have no `showDirectoryPicker`; there the command line is the
+only way, which is why it stays the reference.
+
+#### Why the browser cannot download
 
 Not even for a single file, and not because of the same-origin rule alone.
 Measured:

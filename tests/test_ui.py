@@ -825,3 +825,69 @@ def test_too_small_previews_are_counted(export_dir: Path) -> None:
         if i.get("vw") and i.get("w") and i["vw"] < 400 and i["w"] > i["vw"]
     )
     assert index["counts"]["preview_too_small"] == expected
+
+
+# ---------------------------------------------------------------------------
+# Kopieren ohne Terminal
+# ---------------------------------------------------------------------------
+
+
+def test_the_page_can_copy_without_a_terminal(export_dir: Path) -> None:
+    """Der Weg ohne Kommandozeile, samt seiner Waechter.
+
+    Gemessen: eine als Datei geoeffnete Seite darf lesen und schreiben, wenn
+    der Mensch den Ordner freigibt. Die Sperre betrifft den automatischen
+    Zugriff, nicht den erlaubten.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    for stueck in ('id="hand-direct"', 'id="hd-export"', 'id="hd-target"',
+                   'id="hd-run"', 'id="hd-stop"', "showDirectoryPicker",
+                   "createWritable", "requestPermission"):
+        assert stueck in html, f"{stueck} fehlt"
+
+
+def test_the_browser_copy_verifies_against_the_manifest(export_dir: Path) -> None:
+    """Sonst waere es der schwaechere Zwilling von collect --verify.
+
+    Die Hashes kommen aus dem Manifest im freigegebenen Ordner - der Index
+    traegt keine -, und geprueft wird die ZURUECKGELESENE Datei. Den eigenen
+    Puffer zu hashen waere Selbstbestaetigung.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "hashKarteLaden" in html
+    assert "export-manifest.json" in html
+    assert "const zurueck = await (await ziel.getFile()).arrayBuffer();" in html
+    assert "Kopie weicht ab" in html
+    # Auch die Quelle wird gegen das Manifest geprueft, nicht nur die Kopie.
+    assert "Quelle weicht vom Manifest ab" in html
+
+
+def test_the_browser_copy_refuses_a_target_inside_the_export(export_dir: Path) -> None:
+    """Dieselbe Regel wie in der Kommandozeile, mit dem passenden Werkzeug.
+
+    resolve() liefert einen relativen Pfad, wenn das Ziel ein Nachfahre des
+    Exports ist - und braucht dafuer keine Pfade zu kennen.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "await HD.exportDir.resolve(HD.targetDir)" in html
+    assert "liegt im Export" in html
+
+
+def test_the_browser_copy_does_not_overwrite_and_can_repeat(export_dir: Path) -> None:
+    """Belegte Namen kommen aus dem Zielordner, wie bei collect."""
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "for await (const [name, h] of HD.targetDir.entries())" in html
+    assert "lagen schon dort" in html
+
+
+def test_the_browser_copy_states_what_it_cannot_do(export_dir: Path) -> None:
+    """Zwei echte Nachteile - und die gehoeren in den Dialog, nicht ins Kleingedruckte.
+
+    Der Cloud-Waechter braucht den Pfad, den der Browser nicht herausgibt.
+    Hardlinks gibt es nicht, also entstehen echte Kopien.
+    """
+    html = write_page(_index(export_dir), export_dir).read_text(encoding="utf-8")
+    assert "per Hardlink wären es 0 Bytes" in html
+    assert "in eine Cloud synchronisiert, kann hier niemand prüfen" in html
+    # Und der Weg ueber die Kommandozeile bleibt sichtbar daneben stehen.
+    assert "Oder über die Kommandozeile" in html

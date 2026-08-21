@@ -539,7 +539,36 @@ relativen Pfad je Zeile.
 | `--verify` | für jede Datei den SHA-256 gegen das Manifest prüfen |
 | `--dry-run` | nur zeigen, was eingesammelt würde |
 
-#### Warum der Browser das nicht kann
+#### Kopieren ohne Terminal (Chrome und Edge)
+
+Der Dialog bietet einen zweiten Weg: zwei Ordner freigeben, und die Seite
+kopiert die Auswahl selbst. Gemessen, nicht vermutet — eine als Datei geöffnete
+Seite **darf** lesen und schreiben, sofern ein Mensch den Ordner freigibt. Die
+Sperre betrifft den automatischen Zugriff, nicht den erlaubten.
+
+Sie trägt dieselbe Zusage wie `msgx collect --verify`: der SHA-256 kommt aus dem
+Manifest im freigegebenen Ordner, und verglichen wird die Datei, die **von der
+Platte zurückgelesen** wurde. Den eigenen Puffer zu hashen wäre
+Selbstbestätigung.
+
+Zwei Dinge kann dieser Weg nicht, und der Dialog sagt beide:
+
+- **Kein Cloud-Wächter.** `collect` verweigert ein Ziel in einem
+  synchronisierten Ordner. Diese Prüfung braucht den Pfad, und den gibt ein
+  Browser nie heraus — `FileSystemHandle` hat kein Pfadfeld. Nimm einen lokalen
+  Ordner.
+- **Keine Hardlinks.** `collect` verknüpft und kostet keinen zusätzlichen
+  Speicher; die Seite schreibt echte Kopien. Der Dialog nennt die Zahl der Bytes,
+  die dabei doppelt liegen.
+
+Was er mit der Kommandozeile teilt: er verweigert ein Ziel innerhalb des Exports
+(über `resolve()`), er überschreibt nie eine andere Datei gleichen Namens, und
+zweimal ausgeführt entstehen keine Doppel.
+
+Firefox und Safari haben `showDirectoryPicker` nicht; dort bleibt nur die
+Kommandozeile — deshalb bleibt sie die verlässliche.
+
+#### Warum der Browser nicht herunterlädt
 
 Nicht einmal für eine einzelne Datei, und nicht allein wegen der
 Same-Origin-Regel. Gemessen:

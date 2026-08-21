@@ -327,6 +327,19 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
   background: var(--accent-soft, transparent);
 }
 .hand .hand-scope p { margin: 0 0 9px; color: var(--text); font-size: 13px; }
+.hand .hand-direct {
+  border: 1px solid var(--accent); border-radius: 10px;
+  background: var(--accent-soft); padding: 13px 14px; margin: 0 0 16px;
+}
+.hand .hd-steps { display: flex; align-items: center; gap: 10px; margin: 8px 0; flex-wrap: wrap; }
+.hand .hd-state { font-size: 12.5px; color: var(--muted); }
+.hand .hd-state.ok { color: var(--ok, #17794a); }
+.hand .hd-state.bad { color: var(--bad, #b3261e); }
+.hand .hd-limits { margin: 10px 0 0; }
+.hand h3.hand-cli-head {
+  margin: 20px 0 10px; font-size: 12px; font-weight: 650;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+}
 .hand .hand-target {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center; gap: 8px; margin: 0 0 14px;
@@ -471,12 +484,33 @@ dialog#hand::backdrop { background: rgba(0,0,0,.6); }
     Datei</strong> geht es kürzer: in der Einzelansicht Rechtsklick auf das Bild
     und „Bild speichern unter…". Das ist eine Funktion des Browsers und geht an
     der Sperre vorbei.</p>
+    <div id="hand-direct" class="hand-direct" hidden>
+      <p class="label label--tight">Ohne Terminal: hier kopieren</p>
+      <p class="note" id="hd-note"></p>
+      <div class="hd-steps">
+        <button type="button" id="hd-export">1 · Exportordner freigeben …</button>
+        <span id="hd-export-state" class="hd-state"></span>
+      </div>
+      <div class="hd-steps">
+        <button type="button" id="hd-target">2 · Zielordner freigeben …</button>
+        <span id="hd-target-state" class="hd-state"></span>
+      </div>
+      <div class="hd-steps">
+        <button type="button" class="primary" id="hd-run" disabled>3 · Kopieren</button>
+        <button type="button" id="hd-stop" hidden>Abbrechen</button>
+        <span id="hd-progress" class="hd-state"></span>
+      </div>
+      <div id="hd-result"></div>
+      <p class="note hd-limits" id="hd-limits"></p>
+    </div>
+
     <div class="hand-target">
       <label for="hand-target-input">Zielordner</label>
       <input id="hand-target-input" type="text" spellcheck="false"
              autocapitalize="off" autocorrect="off" />
       <button type="button" id="hand-target-reset" title="Auf ~/Auswahl zurücksetzen">Zurücksetzen</button>
     </div>
+    <h3 id="hand-cli-head" class="hand-cli-head">Oder über die Kommandozeile</h3>
     <div id="hand-steps"></div>
     <dl class="hand-legend">
       <dt><code>--output</code></dt>
@@ -1337,6 +1371,226 @@ const DATA = /*__INDEX__*/;
     if (e.key === " ") { e.preventDefault(); if (position >= 0) choose(position, false); }
   });
 
+
+  /* --- Ohne Terminal: im Browser kopieren -------------------------------
+
+     Gemessen und nachgewiesen: eine als Datei geoeffnete Seite darf lesen und
+     schreiben, WENN der Mensch den Ordner ausdruecklich freigibt. Die Sperre
+     betrifft den automatischen Zugriff, nicht den erlaubten.
+
+     Zwei Dinge kann dieser Weg NICHT, und beide stehen im Dialog:
+
+     * Der Cloud-Waechter fehlt. `msgx collect` verweigert ein Ziel in einem
+       synchronisierten Ordner. Diese Pruefung braucht den Pfad, und den gibt
+       der Browser nicht heraus - gemessen, FileSystemHandle hat kein Pfadfeld.
+     * Hardlinks gibt es nicht. Die Kommandozeile verknuepft und braucht null
+       zusaetzliche Bytes; hier werden echte Kopien geschrieben.
+
+     Was er kann: dieselbe Zusage wie `collect --verify`. Der SHA-256 kommt aus
+     dem Manifest, die geschriebene Datei wird zurueckgelesen und verglichen.
+     -------------------------------------------------------------------- */
+
+  const HD = {
+    moeglich: typeof window.showDirectoryPicker === "function",
+    exportDir: null,
+    targetDir: null,
+    hashes: null,
+    laeuft: false,
+    abbruch: false,
+  };
+
+  async function hashHex(puffer) {
+    const h = await crypto.subtle.digest("SHA-256", puffer);
+    return Array.from(new Uint8Array(h)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  /* Die Hashes kommen aus den Manifesten im freigegebenen Ordner, nicht aus
+     dem Index - der Index traegt sie nicht, und das Manifest ist ohnehin die
+     Instanz, gegen die auch `verify` prueft. */
+  async function hashKarteLaden(wurzel) {
+    const karte = new Map();
+    const verzeichnisse = (DATA.sources && DATA.sources.length)
+      ? DATA.sources.map((s) => s.directory)
+      : [null];
+    for (const dir of verzeichnisse) {
+      const ordner = dir ? await wurzel.getDirectoryHandle(dir) : wurzel;
+      const mh = await ordner.getFileHandle("export-manifest.json");
+      const manifest = JSON.parse(await (await mh.getFile()).text());
+      const praefix = dir ? dir + "/" : "";
+      for (const f of manifest.files) {
+        if (!f.sha256) continue;
+        if (f.output_path) karte.set(praefix + f.output_path, f.sha256);
+        for (const l of f.link_paths || []) karte.set(praefix + l, f.sha256);
+      }
+    }
+    return karte;
+  }
+
+  async function dateiHandle(wurzel, relativ) {
+    const teile = relativ.split("/").filter(Boolean);
+    let ordner = wurzel;
+    for (const teil of teile.slice(0, -1)) ordner = await ordner.getDirectoryHandle(teil);
+    return ordner.getFileHandle(teile[teile.length - 1]);
+  }
+
+  function hdStand(id, text, art) {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.className = "hd-state" + (art ? " " + art : "");
+  }
+
+  function hdBereit() {
+    document.getElementById("hd-run").disabled =
+      !(HD.exportDir && HD.targetDir && HD.hashes && !HD.laeuft);
+  }
+
+  document.getElementById("hd-export").addEventListener("click", async () => {
+    try {
+      HD.exportDir = await window.showDirectoryPicker({ id: "msgx-export", mode: "read" });
+      HD.hashes = await hashKarteLaden(HD.exportDir);
+      hdStand("hd-export-state",
+        `„${HD.exportDir.name}“ · ${num(HD.hashes.size)} Prüfsummen gelesen`, "ok");
+    } catch (e) {
+      HD.exportDir = null;
+      HD.hashes = null;
+      hdStand("hd-export-state",
+        e.name === "AbortError" ? "abgebrochen"
+          : "Kein Manifest gefunden — bitte den Ordner mit dieser Seite wählen.", "bad");
+    }
+    hdBereit();
+  });
+
+  document.getElementById("hd-target").addEventListener("click", async () => {
+    try {
+      HD.targetDir = await window.showDirectoryPicker({ id: "msgx-target", mode: "readwrite" });
+    } catch (e) {
+      HD.targetDir = null;
+      hdStand("hd-target-state", "abgebrochen", "bad");
+      hdBereit();
+      return;
+    }
+    if ((await HD.targetDir.requestPermission({ mode: "readwrite" })) !== "granted") {
+      HD.targetDir = null;
+      hdStand("hd-target-state", "keine Schreiberlaubnis", "bad");
+      hdBereit();
+      return;
+    }
+    // Dieselbe Regel wie in der Kommandozeile: nicht in den Export schreiben.
+    // resolve() liefert einen relativen Pfad, wenn das Ziel darin liegt.
+    if (HD.exportDir && (await HD.exportDir.resolve(HD.targetDir))) {
+      HD.targetDir = null;
+      hdStand("hd-target-state", "liegt im Export — bitte einen Ordner außerhalb", "bad");
+      hdBereit();
+      return;
+    }
+    hdStand("hd-target-state", `„${HD.targetDir.name}“ · Schreiben erlaubt`, "ok");
+    hdBereit();
+  });
+
+  document.getElementById("hd-stop").addEventListener("click", () => { HD.abbruch = true; });
+
+  document.getElementById("hd-run").addEventListener("click", async () => {
+    const auswahl = selectedItems();
+    if (!auswahl.length) return;
+    HD.laeuft = true;
+    HD.abbruch = false;
+    hdBereit();
+    document.getElementById("hd-stop").hidden = false;
+    document.getElementById("hd-result").replaceChildren();
+
+    // Belegte Namen aus dem Ziel lesen, damit ein zweiter Lauf nicht
+    // ueberschreibt - dieselbe Regel wie in der Kommandozeile.
+    const belegt = new Map();
+    for await (const [name, h] of HD.targetDir.entries()) {
+      if (h.kind === "file") belegt.set(name, h);
+    }
+
+    const gesamtBytes = auswahl.reduce((a, it) => a + (it.s || 0), 0);
+    let fertig = 0, bytes = 0, uebersprungen = 0;
+    const fehler = [];
+
+    for (const eintrag of auswahl) {
+      if (HD.abbruch) break;
+      const basis = eintrag.p.split("/").pop();
+      try {
+        const soll = HD.hashes.get(eintrag.p) || null;
+        const quelle = await (await dateiHandle(HD.exportDir, eintrag.p)).getFile();
+        const puffer = await quelle.arrayBuffer();
+        const istQuelle = await hashHex(puffer);
+        if (soll && istQuelle !== soll) {
+          fehler.push([basis, "Quelle weicht vom Manifest ab"]);
+          continue;
+        }
+
+        // Namen finden. Steckt dort schon dieselbe Datei, ist sie eingesammelt.
+        let name = basis;
+        if (belegt.has(name)) {
+          const da = await (await belegt.get(name).getFile()).arrayBuffer();
+          if ((await hashHex(da)) === istQuelle) {
+            uebersprungen += 1;
+            fertig += 1;
+            bytes += quelle.size;
+            continue;
+          }
+          const punkt = basis.lastIndexOf(".");
+          const stamm = punkt > 0 ? basis.slice(0, punkt) : basis;
+          const endung = punkt > 0 ? basis.slice(punkt) : "";
+          let n = 1;
+          while (belegt.has(`${stamm}-${n}${endung}`)) n += 1;
+          name = `${stamm}-${n}${endung}`;
+        }
+
+        const ziel = await HD.targetDir.getFileHandle(name, { create: true });
+        const strom = await ziel.createWritable();
+        await strom.write(puffer);
+        await strom.close();
+        belegt.set(name, ziel);
+
+        // Zurueckgelesen pruefen, nicht den eigenen Puffer - nur der Vergleich
+        // mit dem, was auf der Platte steht, ist ein Nachweis.
+        const zurueck = await (await ziel.getFile()).arrayBuffer();
+        if ((await hashHex(zurueck)) !== istQuelle) {
+          fehler.push([name, "Kopie weicht ab"]);
+        }
+        fertig += 1;
+        bytes += quelle.size;
+      } catch (e) {
+        fehler.push([basis, e.name]);
+      }
+      if (fertig % 5 === 0 || fertig === auswahl.length) {
+        hdStand("hd-progress",
+          `${num(fertig)} von ${num(auswahl.length)} · ${size(bytes)} von ${size(gesamtBytes)}`);
+        await new Promise((f) => setTimeout(f, 0));
+      }
+    }
+
+    document.getElementById("hd-stop").hidden = true;
+    HD.laeuft = false;
+    hdBereit();
+
+    const bericht = document.createElement("div");
+    bericht.className = "note";
+    bericht.style.marginTop = "8px";
+    const teile = [
+      `${num(fertig)} von ${num(auswahl.length)} kopiert und geprüft`,
+      uebersprungen ? `${num(uebersprungen)} lagen schon dort` : null,
+      fehler.length ? `${num(fehler.length)} Problem(e)` : null,
+      HD.abbruch ? "abgebrochen" : null,
+    ].filter(Boolean);
+    bericht.textContent = teile.join(" · ") + ".";
+    document.getElementById("hd-result").appendChild(bericht);
+    if (fehler.length) {
+      const liste = document.createElement("ul");
+      liste.className = "note";
+      for (const [name, grund] of fehler.slice(0, 20)) {
+        const li = document.createElement("li");
+        li.textContent = `${name} — ${grund}`;
+        liste.appendChild(li);
+      }
+      document.getElementById("hd-result").appendChild(liste);
+    }
+  });
+
   /* --- Uebergabe an das Kommandozeilenprogramm --------------------------------------------- */
 
   // Das Exportverzeichnis steht im eigenen Pfad. Die Seite liegt darin, also
@@ -1583,6 +1837,27 @@ const DATA = /*__INDEX__*/;
         `Hier stehen nur die ${num(chosen.length)} aus dem aktuellen Filter. ` +
         `${num(verdeckt)} weitere sind noch ausgewählt, aber gerade verdeckt — ` +
         `sie bleiben erhalten. Filter aufheben, um sie mitzunehmen.`;
+    }
+
+    // Der Weg ohne Terminal, wenn der Browser ihn hergibt.
+    const direkt = document.getElementById("hand-direct");
+    direkt.hidden = !HD.moeglich;
+    if (HD.moeglich) {
+      const bytes = chosen.reduce((a, it) => a + (it.s || 0), 0);
+      document.getElementById("hd-note").textContent =
+        "Die Seite kopiert selbst — zwei Ordner freigeben, dann läuft es. Jede " +
+        "Kopie wird zurückgelesen und ihr SHA-256 gegen das Export-Manifest " +
+        "geprüft, wie bei msgx collect --verify.";
+      // Was dieser Weg nicht kann, gehoert danebengeschrieben und nicht
+      // verschwiegen. Beide Punkte sind gemessen, nicht vermutet.
+      document.getElementById("hd-limits").textContent =
+        `Zwei Unterschiede zur Kommandozeile: es entstehen echte Kopien ` +
+        `(${size(bytes)} zusätzlich — per Hardlink wären es 0 Bytes), und ob der ` +
+        `Zielordner in eine Cloud synchronisiert, kann hier niemand prüfen: der ` +
+        `Browser gibt den Ort eines Ordners nicht heraus. Wähle einen lokalen.`;
+      document.getElementById("hd-progress").textContent = "";
+      document.getElementById("hd-result").replaceChildren();
+      hdBereit();
     }
 
     const plan = planFor(chosen);

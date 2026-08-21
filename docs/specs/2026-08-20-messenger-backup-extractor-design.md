@@ -1767,3 +1767,43 @@ Dateizugriff war es zu breit — und das ist innerhalb dieses Projekts nun zum
 dritten Mal dasselbe Muster: eine belegte Messung auf eine breitere Aussage
 ausgedehnt, ohne den neuen Fall zu prüfen. Vorher bei den unscharfen Kacheln
 (falsche Messgröße) und beim `<a download>` (nur `fetch` geprüft).
+
+### 32.5 Gebaut: Kopieren ohne Terminal, für jede Größe
+
+Entschieden wurde, es zu bauen — und konsequent, nicht nur für kleine
+Auswahlen. Damit war die Aufgabe nicht „ein bequemer Sonderfall", sondern „ein
+zweiter Weg, der dieselbe Zusage trägt".
+
+**Die Zusage.** Die Hashes kommen aus den Manifesten im freigegebenen Ordner,
+nicht aus dem Index — der trägt keine, und das Manifest ist ohnehin die Instanz,
+gegen die auch `verify` prüft. Geprüft wird zweimal: die Quelle gegen das
+Manifest (findet einen beschädigten Export) und die **zurückgelesene** Kopie
+gegen denselben Wert. Den eigenen Puffer zu hashen wäre Selbstbestätigung, das
+ist derselbe Grundsatz wie in `extract`.
+
+**Die Wächter, die mitkommen.** Ziel nicht im Export — mit
+`exportDir.resolve(targetDir)`, das einen relativen Pfad liefert, wenn das Ziel
+ein Nachfahre ist, und dafür keine Pfade kennen muss. Belegte Namen werden aus
+dem Zielordner gelesen, gleicher Name mit gleichem Hash gilt als schon
+eingesammelt, gleicher Name mit anderem Inhalt bekommt ein Suffix. Also dieselbe
+Wiederholbarkeit, die §31.5 für `collect` nachgerüstet hat.
+
+**Die zwei Wächter, die nicht mitkommen können.** Beide stehen im Dialog, mit
+Grund:
+
+* Der **Cloud-Wächter** braucht den Pfad. Den gibt der Browser nicht heraus.
+  Also kann diese Prüfung hier nicht existieren, und das muss dastehen statt
+  stillschweigend zu fehlen.
+* **Hardlinks** gibt es nicht. Der Dialog nennt die Zahl der Bytes, die doppelt
+  liegen werden, und dass es per Hardlink null wären. Eine informierte
+  Entscheidung braucht die Zahl, nicht den Hinweis.
+
+**Speicher.** Jede Datei wird ganz gelesen, um sie zu hashen. Vorher gemessen,
+ob das tragfähig ist: Median unter 100 KB, das 99. Perzentil unter 7 MB, und
+genau **eine** Datei über 256 MB. Der Spitzenbedarf ist also eine Datei, nicht
+die Auswahl — damit brauchte es keine zweiklassige Prüfung, bei der große
+Dateien nur nach Größe verglichen werden.
+
+**Was bleibt.** Firefox und Safari haben `showDirectoryPicker` nicht. Der
+Kommandozeilenweg ist deshalb kein Altlast-Zweig, sondern der verlässliche, und
+steht im Dialog gleichberechtigt darunter.
