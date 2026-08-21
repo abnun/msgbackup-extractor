@@ -37,6 +37,29 @@ Nutzen, nicht davor. Jede Zusage hat eine Prüfung:
 | Kein Passwort im Log | Es gibt kein Passwort-Argument; per Introspektion aller Unterbefehle erzwungen |
 | Nichts wird geraten | Struktur wird gemessen; bei Unklarheit entsteht ein Diagnosebericht statt eines Ergebnisses |
 
+## Die Wege hinein und hinaus
+
+Drei Wege hinein, je nachdem wie vertraut jemand mit einem Terminal ist:
+
+* `msgx analyze` und `msgx extract` — die einzelnen Befehle, für alle, die sie
+  kennen.
+* `msgx guide` — ein geführter Ablauf, der fragt und dabei **jeden Befehl
+  zeigt, den er ausführt**. Er bringt das Werkzeug bei, statt es zu verstecken;
+  wer ihn zweimal benutzt hat, kann ihn weglassen.
+* Ein doppelklickbarer Starter, gebaut mit `scripts/build-app.py`: unter macOS
+  ein `.app`, unter Windows eine `.cmd`. Er öffnet ein Terminal und ruft den
+  geführten Ablauf auf — und das muss er, weil das Passwort eines
+  verschlüsselten Backups ausschließlich eingetippt wird.
+
+Und zwei Wege hinaus, wenn im lokalen UI eine Auswahl getroffen ist:
+
+* **Ohne Terminal**, in Chrome und Edge: zwei Ordner freigeben, die Seite
+  kopiert selbst und prüft jede Kopie gegen den SHA-256 aus dem Manifest. Zwei
+  Dinge kann dieser Weg nicht, und beide stehen im Dialog — keine Cloud-Warnung
+  (der Browser gibt den Ort eines Ordners nicht heraus) und keine Hardlinks.
+* **`msgx collect`**, überall: verknüpft statt zu kopieren, kennt den
+  Cloud-Wächter, und bleibt damit der verlässliche Weg.
+
 ## Die Zielgruppe und ihre Lage
 
 Eine technisch versierte Person, die an ihre **eigenen** Familienfotos und

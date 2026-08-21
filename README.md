@@ -78,9 +78,12 @@ Six steps, each its own command. You can stop after any of them.
     │  msgx verify    checks the export against the manifest
     ▼
   index.html in your browser
-    │  select, "hand over selection", copy the list
-    ▼
-  msgx collect     gathers the selection into a folder
+    │  select, "hand over selection"
+    ├──────────────────────────────┐
+    ▼                              ▼
+  release two folders,         msgx collect
+  the page copies itself       gathers the selection
+  (Chrome, Edge)               (everywhere, hardlinks)
 ```
 
 `export-manifest.json` is the hub: `extract` writes it, and `verify`, `ui` and
@@ -697,7 +700,7 @@ Nothing is downloaded at runtime.
 ~/.venvs/msgbackup-extractor/bin/ruff check src tests
 ```
 
-704 tests. They **never** need real private data: every backup is generated
+763 tests. They **never** need real private data: every backup is generated
 synthetically with a real TLV keybag, real PBKDF2, real AES Key Wrap, real
 AES-256-CBC and real NSKeyedArchiver MBFile blobs, so they actually exercise
 the production code instead of matching a simplified test format.
@@ -725,6 +728,18 @@ machine-specific paths, device identifiers and leftovers from a history
 rewrite, and exits non-zero on a hit. Known-harmless matches — synthetic
 fixture data — are listed with a reason in
 `scripts/sensitive-allowlist.txt`, rather than by weakening a pattern.
+
+A third gate runs before the website is published, and again in CI:
+
+```bash
+scripts/check-offline.py website
+```
+
+The privacy notice promises that no resource comes from a third party. This
+checks it instead of trusting it — absolute URLs in loading attributes, in a
+`<link>` whose `rel` actually fetches something, and `@import`, `fetch`,
+`XMLHttpRequest`, `EventSource` or `WebSocket` anywhere in the CSS and
+JavaScript.
 
 ---
 

@@ -890,7 +890,7 @@ def test_the_browser_copy_states_what_it_cannot_do(export_dir: Path) -> None:
     assert "per Hardlink wären es 0 Bytes" in html
     assert "in eine Cloud synchronisiert, kann hier niemand prüfen" in html
     # Und der Weg ueber die Kommandozeile bleibt sichtbar daneben stehen.
-    assert "Oder über die Kommandozeile" in html
+    assert "Oder<br />im Terminal" in html
 
 
 def test_building_the_overview_also_refreshes_the_export_pages(

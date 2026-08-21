@@ -78,9 +78,12 @@ Sechs Schritte, jeder ein eigener Befehl. Nach jedem kann man aufhören.
     │  msgx verify    prüft den Export gegen das Manifest
     ▼
   index.html im Browser
-    │  auswählen, „Auswahl übergeben", Liste kopieren
-    ▼
-  msgx collect     sammelt die Auswahl in einen Ordner
+    │  auswählen, „Auswahl übernehmen"
+    ├──────────────────────────────┐
+    ▼                              ▼
+  Ordner freigeben,            msgx collect
+  die Seite kopiert selbst     sammelt die Auswahl ein
+  (Chrome, Edge)               (überall, mit Hardlinks)
 ```
 
 `export-manifest.json` ist die Drehscheibe: `extract` schreibt es, und
@@ -719,7 +722,7 @@ Zur Laufzeit wird nichts heruntergeladen.
 ~/.venvs/msgbackup-extractor/bin/ruff check src tests
 ```
 
-704 Tests. Sie brauchen **nie** echte private Daten: jedes Backup wird
+763 Tests. Sie brauchen **nie** echte private Daten: jedes Backup wird
 synthetisch erzeugt, mit echtem TLV-Keybag, echtem PBKDF2, echtem AES-KeyWrap,
 echtem AES-256-CBC und echten NSKeyedArchiver-MBFile-Blobs — sie prüfen also
 tatsächlich den Produktionscode und nicht ein vereinfachtes Testformat.
@@ -748,6 +751,19 @@ persönlichen Daten, rechnerspezifischen Pfaden, Gerätekennungen und Resten ein
 Historien-Umschreibung und endet bei einem Treffer mit einem Fehlercode.
 Bekannte Fehlalarme — synthetische Fixture-Daten — stehen mit Begründung in
 `scripts/sensitive-allowlist.txt`, statt ein Muster zu verwässern.
+
+Eine dritte Prüfung läuft, bevor die Internetseite veröffentlicht wird, und
+nochmals in der CI:
+
+```bash
+scripts/check-offline.py website
+```
+
+Die Datenschutzerklärung sagt zu, dass keine Ressource von einem Dritten kommt.
+Das wird geprüft statt geglaubt — absolute URLs in ladenden Attributen, in einem
+`<link>`, dessen `rel` tatsächlich etwas holt, und `@import`, `fetch`,
+`XMLHttpRequest`, `EventSource` oder `WebSocket` irgendwo im CSS und
+JavaScript.
 
 ---
 
